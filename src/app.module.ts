@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
+import { OrganizationModule } from './modules/organization/organization.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AuthModule } from './modules/auth/auth.module';
       synchronize: true, // TODO: reemplazar por migraciones antes de producción
     }),
     AuthModule,
+    OrganizationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
