@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      target: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - DATABASE_URL=postgresql://hornerito:hornerito@db:5432/hornerito
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    container_name: hornerito-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=hornerito
+      - POSTGRES_PASSWORD=hornerito
+      - POSTGRES_DB=hornerito
+    ports:
+      - "5432:5432"
+    volumes:
+      - hornerito-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hornerito -d hornerito"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hornerito-db-data:
