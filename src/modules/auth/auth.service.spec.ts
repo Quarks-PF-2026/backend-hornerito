@@ -71,7 +71,8 @@ describe('AuthService', () => {
       expect(
         await bcrypt.compare(validDto.password, created.passwordHash!),
       ).toBe(true);
-      expect(created.emailVerified).toBe(false);
+      // TODO: volver a false cuando el envío real de email esté cableado.
+      expect(created.emailVerified).toBe(true);
       expect(created.verificationToken).toBeTruthy();
       expect(mail.send).toHaveBeenCalledWith(
         validDto.email,

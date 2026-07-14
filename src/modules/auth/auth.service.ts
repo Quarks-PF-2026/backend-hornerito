@@ -51,7 +51,8 @@ export class AuthService {
       name: dto.name,
       email: dto.email,
       passwordHash,
-      emailVerified: false,
+      // TODO: volver a `false` cuando el envío real de email esté cableado.
+      emailVerified: true,
       verificationToken,
       verificationTokenExpiresAt: new Date(
         Date.now() + VERIFICATION_TOKEN_TTL_MS,
