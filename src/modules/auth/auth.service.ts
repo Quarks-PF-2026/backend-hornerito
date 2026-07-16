@@ -1,13 +1,17 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import { Repository } from 'typeorm';
+import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import type { IUserRepository } from './repositories/user-repository.interface';
@@ -30,6 +34,8 @@ export interface LoginResult {
 export class AuthService {
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepository: IUserRepository,
+    @InjectRepository(OrganizationMembership)
+    private readonly membershipRepository: Repository<OrganizationMembership>,
     private readonly verificationMailService: VerificationMailService,
     private readonly jwtService: JwtService,
   ) {}
@@ -95,9 +101,44 @@ export class AuthService {
       });
     }
 
+    const memberships = await this.membershipRepository.find({
+      where: { userId: user.id },
+    });
+    const orgId =
+      memberships.length === 1 ? memberships[0].organizationId : undefined;
+
     const accessToken = this.jwtService.sign({
       sub: user.id,
       email: user.email,
+      orgId,
+    });
+    return {
+      accessToken,
+      user: { id: user.id, name: user.name, email: user.email },
+    };
+  }
+
+  async switchOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<LoginResult> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    const membership = await this.membershipRepository.findOneBy({
+      userId,
+      organizationId,
+    });
+    if (!membership) {
+      throw new ForbiddenException('No pertenecés a esa organización.');
+    }
+
+    const accessToken = this.jwtService.sign({
+      sub: user.id,
+      email: user.email,
+      orgId: organizationId,
     });
     return {
       accessToken,

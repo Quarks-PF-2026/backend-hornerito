@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { OrganizationModule } from './modules/organization/organization.module';
+import { TenantModule } from './modules/tenant/tenant.module';
 
 @Module({
   imports: [
@@ -12,9 +13,14 @@ import { OrganizationModule } from './modules/organization/organization.module';
     TypeOrmModule.forRoot({
       type: 'postgres',
       url: process.env.DATABASE_URL,
+      schema: 'public',
       autoLoadEntities: true,
-      synchronize: true, // TODO: reemplazar por migraciones antes de producción
+      synchronize: false,
+      migrations: [__dirname + '/database/migrations/public/*{.ts,.js}'],
+      migrationsTableName: 'migrations',
+      migrationsRun: true,
     }),
+    TenantModule,
     AuthModule,
     OrganizationModule,
   ],

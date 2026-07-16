@@ -11,8 +11,8 @@ export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
   @Get('me')
-  getMine(@CurrentUser() user: AuthenticatedUser) {
-    return this.organizationService.getMine(user.id);
+  listMine(@CurrentUser() user: AuthenticatedUser) {
+    return this.organizationService.listMine(user.id);
   }
 
   @Put('me')

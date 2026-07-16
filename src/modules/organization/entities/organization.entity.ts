@@ -17,7 +17,7 @@ export class Organization {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column()
   ownerId: string;
 
   @Column()

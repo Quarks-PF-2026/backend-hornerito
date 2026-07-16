@@ -2,12 +2,15 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
 import { User } from './entities/user.entity';
+import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
 import { IUserRepository } from './repositories/user-repository.interface';
 import { VerificationMailService } from './mail/verification-mail.service';
 
@@ -30,23 +33,29 @@ function makeUser(overrides: Partial<User> = {}): User {
 describe('AuthService', () => {
   let service: AuthService;
   let repo: jest.Mocked<IUserRepository>;
+  let membershipRepo: jest.Mocked<Repository<OrganizationMembership>>;
   let mail: jest.Mocked<VerificationMailService>;
   let jwt: jest.Mocked<JwtService>;
 
   beforeEach(() => {
     repo = {
+      findById: jest.fn(),
       findByEmail: jest.fn(),
       findByVerificationToken: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
     };
+    membershipRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOneBy: jest.fn(),
+    } as unknown as jest.Mocked<Repository<OrganizationMembership>>;
     mail = {
       send: jest.fn(),
     } as unknown as jest.Mocked<VerificationMailService>;
     jwt = {
       sign: jest.fn().mockReturnValue('signed-jwt'),
     } as unknown as jest.Mocked<JwtService>;
-    service = new AuthService(repo, mail, jwt);
+    service = new AuthService(repo, membershipRepo, mail, jwt);
   });
 
   describe('register', () => {
@@ -171,11 +180,76 @@ describe('AuthService', () => {
       expect(jwt.sign).toHaveBeenCalledWith({
         sub: user.id,
         email: user.email,
+        orgId: undefined,
       });
       expect(result).toEqual({
         accessToken: 'signed-jwt',
         user: { id: user.id, name: user.name, email: user.email },
       });
+    });
+
+    it('embeds orgId in the token when the user has exactly one membership', async () => {
+      const passwordHash = await bcrypt.hash('password1', 10);
+      const user = makeUser({ emailVerified: true, passwordHash });
+      repo.findByEmail.mockResolvedValue(user);
+      membershipRepo.find.mockResolvedValue([
+        { organizationId: 'org-1' } as OrganizationMembership,
+      ]);
+
+      await service.login({ email: user.email, password: 'password1' });
+
+      expect(jwt.sign).toHaveBeenCalledWith({
+        sub: user.id,
+        email: user.email,
+        orgId: 'org-1',
+      });
+    });
+
+    it('does not pick an orgId when the user belongs to several organizations', async () => {
+      const passwordHash = await bcrypt.hash('password1', 10);
+      const user = makeUser({ emailVerified: true, passwordHash });
+      repo.findByEmail.mockResolvedValue(user);
+      membershipRepo.find.mockResolvedValue([
+        { organizationId: 'org-1' } as OrganizationMembership,
+        { organizationId: 'org-2' } as OrganizationMembership,
+      ]);
+
+      await service.login({ email: user.email, password: 'password1' });
+
+      expect(jwt.sign).toHaveBeenCalledWith({
+        sub: user.id,
+        email: user.email,
+        orgId: undefined,
+      });
+    });
+  });
+
+  describe('switchOrg', () => {
+    it('re-issues a token scoped to the selected organization', async () => {
+      const user = makeUser();
+      repo.findById.mockResolvedValue(user);
+      membershipRepo.findOneBy.mockResolvedValue({
+        organizationId: 'org-2',
+      } as OrganizationMembership);
+
+      const result = await service.switchOrg(user.id, 'org-2');
+
+      expect(jwt.sign).toHaveBeenCalledWith({
+        sub: user.id,
+        email: user.email,
+        orgId: 'org-2',
+      });
+      expect(result.accessToken).toBe('signed-jwt');
+    });
+
+    it('rejects switching to an organization the user is not a member of', async () => {
+      const user = makeUser();
+      repo.findById.mockResolvedValue(user);
+      membershipRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.switchOrg(user.id, 'org-2')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 });

@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from './entities/user.entity';
+import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
 import { VerificationMailService } from './mail/verification-mail.service';
 import { USER_REPOSITORY } from './repositories/user-repository.interface';
 import { TypeOrmUserRepository } from './repositories/typeorm-user.repository';
@@ -15,7 +16,7 @@ import { TypeOrmUserRepository } from './repositories/typeorm-user.repository';
 @Module({
   imports: [
     PassportModule,
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, OrganizationMembership]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

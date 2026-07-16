@@ -10,6 +10,10 @@ export class TypeOrmUserRepository implements IUserRepository {
     @InjectRepository(User) private readonly repo: Repository<User>,
   ) {}
 
+  findById(id: string): Promise<User | null> {
+    return this.repo.findOneBy({ id });
+  }
+
   findByEmail(email: string): Promise<User | null> {
     return this.repo.findOneBy({ email });
   }
