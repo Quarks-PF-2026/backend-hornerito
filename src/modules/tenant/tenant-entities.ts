@@ -1,0 +1,8 @@
+import { Supply } from '../supply/entities/supply.entity';
+
+/**
+ * Entidades que viven en el schema de cada tenant (no en `public`).
+ * Cada DataSource de tenant (`TenantConnectionService`) se abre con esta lista;
+ * agregar acá toda entidad nueva que se migre a `migrations/tenant/`.
+ */
+export const TENANT_ENTITIES = [Supply];

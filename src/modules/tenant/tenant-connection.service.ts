@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { createTenantDataSource } from '../../database/tenant-data-source';
+import { TENANT_ENTITIES } from './tenant-entities';
 import { schemaNameFor } from './tenant-schema.util';
 
 const IDLE_EVICTION_MS = 30 * 60 * 1000;
@@ -50,6 +51,7 @@ export class TenantConnectionService implements OnModuleDestroy {
     const dataSource = createTenantDataSource({
       schema: schemaNameFor(organizationId),
       poolSize: TENANT_POOL_SIZE,
+      entities: TENANT_ENTITIES,
     });
     await dataSource.initialize();
     this.cache.set(organizationId, { dataSource, lastUsedAt: Date.now() });

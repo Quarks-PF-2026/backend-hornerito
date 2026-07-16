@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { OrganizationModule } from './modules/organization/organization.module';
+import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
 
 @Module({
@@ -23,6 +24,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     TenantModule,
     AuthModule,
     OrganizationModule,
+    SupplyModule,
   ],
   controllers: [AppController],
   providers: [AppService],

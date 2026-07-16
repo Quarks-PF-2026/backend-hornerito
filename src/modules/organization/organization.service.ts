@@ -58,6 +58,10 @@ export class OrganizationService {
     return this.createMine(userId, dto);
   }
 
+  async getOwnedOrganization(userId: string): Promise<Organization | null> {
+    return this.findOwnedOrganization(userId);
+  }
+
   private async findOwnedOrganization(
     userId: string,
   ): Promise<Organization | null> {
@@ -82,7 +86,11 @@ export class OrganizationService {
           description: dto.description,
           address: dto.address,
           contact: dto.contact,
-          status: OrganizationStatus.PENDING,
+          // HACK temporal: sin flujo de validación de admin todavía, toda
+          // organización nueva nace validada para no bloquear el resto de
+          // los módulos (insumos, necesidades, etc). Sacar cuando exista
+          // un endpoint real de validación.
+          status: OrganizationStatus.VALIDATED,
         }),
       );
       await manager.save(
