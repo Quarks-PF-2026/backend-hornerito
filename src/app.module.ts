@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
+import { NeedModule } from './modules/need/need.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
@@ -25,6 +26,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     AuthModule,
     OrganizationModule,
     SupplyModule,
+    NeedModule,
   ],
   controllers: [AppController],
   providers: [AppService],
