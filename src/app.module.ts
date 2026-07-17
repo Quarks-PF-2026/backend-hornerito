@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { NeedModule } from './modules/need/need.module';
 import { OrganizationModule } from './modules/organization/organization.module';
+import { PostModule } from './modules/post/post.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
 
@@ -27,6 +28,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     OrganizationModule,
     SupplyModule,
     NeedModule,
+    PostModule,
   ],
   controllers: [AppController],
   providers: [AppService],
