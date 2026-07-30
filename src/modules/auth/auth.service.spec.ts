@@ -10,7 +10,10 @@ import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
 import { User } from './entities/user.entity';
-import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
+import {
+  OrganizationMembership,
+  OrganizationMembershipRole,
+} from '../organization/entities/organization-membership.entity';
 import { IUserRepository } from './repositories/user-repository.interface';
 import { VerificationMailService } from './mail/verification-mail.service';
 
@@ -40,6 +43,7 @@ describe('AuthService', () => {
   beforeEach(() => {
     repo = {
       findById: jest.fn(),
+      findByIds: jest.fn().mockResolvedValue([]),
       findByEmail: jest.fn(),
       findByVerificationToken: jest.fn(),
       create: jest.fn(),
@@ -185,6 +189,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         accessToken: 'signed-jwt',
         user: { id: user.id, name: user.name, email: user.email },
+        role: null,
       });
     });
 
@@ -193,16 +198,48 @@ describe('AuthService', () => {
       const user = makeUser({ emailVerified: true, passwordHash });
       repo.findByEmail.mockResolvedValue(user);
       membershipRepo.find.mockResolvedValue([
-        { organizationId: 'org-1' } as OrganizationMembership,
+        {
+          organizationId: 'org-1',
+          role: OrganizationMembershipRole.OWNER,
+          active: true,
+        } as OrganizationMembership,
       ]);
 
-      await service.login({ email: user.email, password: 'password1' });
+      const result = await service.login({
+        email: user.email,
+        password: 'password1',
+      });
 
       expect(jwt.sign).toHaveBeenCalledWith({
         sub: user.id,
         email: user.email,
         orgId: 'org-1',
       });
+      expect(result.role).toBe(OrganizationMembershipRole.OWNER);
+    });
+
+    it('only considers active memberships when auto-selecting an organization', async () => {
+      const passwordHash = await bcrypt.hash('password1', 10);
+      const user = makeUser({ emailVerified: true, passwordHash });
+      repo.findByEmail.mockResolvedValue(user);
+      // El repositorio filtra por active: true, así que una membresía
+      // deshabilitada no llega hasta acá.
+      membershipRepo.find.mockResolvedValue([]);
+
+      const result = await service.login({
+        email: user.email,
+        password: 'password1',
+      });
+
+      expect(membershipRepo.find).toHaveBeenCalledWith({
+        where: { userId: user.id, active: true },
+      });
+      expect(jwt.sign).toHaveBeenCalledWith({
+        sub: user.id,
+        email: user.email,
+        orgId: undefined,
+      });
+      expect(result.role).toBeNull();
     });
 
     it('does not pick an orgId when the user belongs to several organizations', async () => {
@@ -230,6 +267,8 @@ describe('AuthService', () => {
       repo.findById.mockResolvedValue(user);
       membershipRepo.findOneBy.mockResolvedValue({
         organizationId: 'org-2',
+        role: OrganizationMembershipRole.COORDINATOR,
+        active: true,
       } as OrganizationMembership);
 
       const result = await service.switchOrg(user.id, 'org-2');
@@ -246,6 +285,20 @@ describe('AuthService', () => {
       const user = makeUser();
       repo.findById.mockResolvedValue(user);
       membershipRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.switchOrg(user.id, 'org-2')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects switching to an organization where the membership is disabled', async () => {
+      const user = makeUser();
+      repo.findById.mockResolvedValue(user);
+      membershipRepo.findOneBy.mockResolvedValue({
+        organizationId: 'org-2',
+        role: OrganizationMembershipRole.VOLUNTEER,
+        active: false,
+      } as OrganizationMembership);
 
       await expect(service.switchOrg(user.id, 'org-2')).rejects.toThrow(
         ForbiddenException,

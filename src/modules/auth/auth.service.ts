@@ -11,7 +11,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
-import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
+import {
+  OrganizationMembership,
+  OrganizationMembershipRole,
+} from '../organization/entities/organization-membership.entity';
+import { User } from './entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import type { IUserRepository } from './repositories/user-repository.interface';
@@ -28,6 +32,7 @@ export interface RegisterResult {
 export interface LoginResult {
   accessToken: string;
   user: { id: string; name: string; email: string };
+  role: OrganizationMembershipRole | null;
 }
 
 @Injectable()
@@ -101,21 +106,14 @@ export class AuthService {
       });
     }
 
+    // Una membresía deshabilitada no cuenta: el usuario no entra a esa
+    // organización aunque siga teniendo cuenta.
     const memberships = await this.membershipRepository.find({
-      where: { userId: user.id },
+      where: { userId: user.id, active: true },
     });
-    const orgId =
-      memberships.length === 1 ? memberships[0].organizationId : undefined;
+    const only = memberships.length === 1 ? memberships[0] : undefined;
 
-    const accessToken = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-      orgId,
-    });
-    return {
-      accessToken,
-      user: { id: user.id, name: user.name, email: user.email },
-    };
+    return this.issueAccessToken(user, only?.organizationId, only?.role);
   }
 
   async switchOrg(
@@ -134,15 +132,34 @@ export class AuthService {
     if (!membership) {
       throw new ForbiddenException('No pertenecés a esa organización.');
     }
+    if (!membership.active) {
+      throw new ForbiddenException(
+        'Tu acceso a esta organización está deshabilitado.',
+      );
+    }
 
+    return this.issueAccessToken(user, organizationId, membership.role);
+  }
+
+  /**
+   * Firma el token de la sesión. El rol viaja en la respuesta (para que el
+   * frontend arme el menú) pero NO en el payload del JWT: la autorización lo
+   * relee de la base en cada request vía TenantGuard.
+   */
+  issueAccessToken(
+    user: User,
+    orgId?: string,
+    role?: OrganizationMembershipRole,
+  ): LoginResult {
     const accessToken = this.jwtService.sign({
       sub: user.id,
       email: user.email,
-      orgId: organizationId,
+      orgId,
     });
     return {
       accessToken,
       user: { id: user.id, name: user.name, email: user.email },
+      role: role ?? null,
     };
   }
 }

@@ -5,7 +5,15 @@ import {
   Organization,
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
+import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
 import { TenantGuard } from './tenant.guard';
+
+const ACTIVE_MEMBERSHIP = {
+  id: 'membership-1',
+  userId: 'user-1',
+  organizationId: 'org-1',
+  active: true,
+} as OrganizationMembership;
 
 function makeContext(request: Record<string, unknown>): ExecutionContext {
   return {
@@ -16,12 +24,16 @@ function makeContext(request: Record<string, unknown>): ExecutionContext {
 describe('TenantGuard', () => {
   let guard: TenantGuard;
   let repo: jest.Mocked<Repository<Organization>>;
+  let membershipRepo: jest.Mocked<Repository<OrganizationMembership>>;
 
   beforeEach(() => {
     repo = {
       findOneBy: jest.fn(),
     } as unknown as jest.Mocked<Repository<Organization>>;
-    guard = new TenantGuard(repo);
+    membershipRepo = {
+      findOneBy: jest.fn().mockResolvedValue(ACTIVE_MEMBERSHIP),
+    } as unknown as jest.Mocked<Repository<OrganizationMembership>>;
+    guard = new TenantGuard(repo, membershipRepo);
   });
 
   it('rejects when the request has no orgId', async () => {
@@ -69,5 +81,31 @@ describe('TenantGuard', () => {
 
     expect(result).toBe(true);
     expect(request.organization).toBe(org);
+    expect(request.membership).toBe(ACTIVE_MEMBERSHIP);
+  });
+
+  it('rejects when the user has no membership in the organization', async () => {
+    repo.findOneBy.mockResolvedValue({
+      id: 'org-1',
+      status: OrganizationStatus.VALIDATED,
+    } as Organization);
+    membershipRepo.findOneBy.mockResolvedValue(null);
+    const ctx = makeContext({ user: { id: 'user-1', orgId: 'org-1' } });
+
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rejects when the membership is disabled', async () => {
+    repo.findOneBy.mockResolvedValue({
+      id: 'org-1',
+      status: OrganizationStatus.VALIDATED,
+    } as Organization);
+    membershipRepo.findOneBy.mockResolvedValue({
+      ...ACTIVE_MEMBERSHIP,
+      active: false,
+    });
+    const ctx = makeContext({ user: { id: 'user-1', orgId: 'org-1' } });
+
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 });

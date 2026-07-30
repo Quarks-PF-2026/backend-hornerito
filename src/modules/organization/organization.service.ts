@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -53,6 +53,15 @@ export class OrganizationService {
         existing.rejectReason = null;
       }
       return this.organizationRepository.save(existing);
+    }
+
+    // Un miembro que no es dueño no edita el perfil ni se crea una organización
+    // propia por accidente al llamar a este endpoint.
+    const memberships = await this.membershipRepository.findByUserId(userId);
+    if (memberships.length > 0) {
+      throw new ForbiddenException(
+        'Solo el dueño puede editar los datos de la organización.',
+      );
     }
 
     return this.createMine(userId, dto);

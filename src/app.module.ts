@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { CollectionPointModule } from './modules/collection-point/collection-point.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
+import { MailModule } from './modules/mail/mail.module';
 import { NeedModule } from './modules/need/need.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { PostModule } from './modules/post/post.module';
@@ -25,6 +26,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
       migrationsTableName: 'migrations',
       migrationsRun: true,
     }),
+    MailModule,
     TenantModule,
     AuthModule,
     OrganizationModule,

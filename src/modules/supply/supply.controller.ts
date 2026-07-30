@@ -1,12 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { CONTENT_WRITER_ROLES } from '../organization/entities/organization-membership.entity';
 import { TenantGuard } from '../tenant/tenant.guard';
 import { CreateSupplyDto } from './dto/create-supply.dto';
 import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { SupplyService } from './supply.service';
 
 @Controller('supplies')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class SupplyController {
   constructor(private readonly supplyService: SupplyService) {}
 
@@ -15,16 +27,19 @@ export class SupplyController {
     return this.supplyService.listMine();
   }
 
+  @Roles(...CONTENT_WRITER_ROLES)
   @Post()
   create(@Body() dto: CreateSupplyDto) {
     return this.supplyService.create(dto);
   }
 
+  @Roles(...CONTENT_WRITER_ROLES)
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSupplyDto) {
     return this.supplyService.update(id, dto);
   }
 
+  @Roles(...CONTENT_WRITER_ROLES)
   @Patch(':id/toggle')
   toggle(@Param('id') id: string) {
     return this.supplyService.toggle(id);
