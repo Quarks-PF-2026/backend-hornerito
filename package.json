@@ -23,7 +23,8 @@
     "migration:create": "typeorm-ts-node-commonjs migration:create",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
-    "migrate:tenants:all": "ts-node -r tsconfig-paths/register src/database/run-tenant-migrations-all.ts"
+    "migrate:tenants:all": "ts-node -r tsconfig-paths/register src/database/run-tenant-migrations-all.ts",
+    "mirror:rebuild": "ts-node -r tsconfig-paths/register src/database/rebuild-public-mirror.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

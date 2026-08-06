@@ -22,7 +22,7 @@ export class TenantContextService {
     private readonly tenantConnectionService: TenantConnectionService,
   ) {}
 
-  private get organizationId(): string {
+  get organizationId(): string {
     const orgId = this.request.organization?.id ?? this.request.user?.orgId;
     if (!orgId) {
       throw new Error(

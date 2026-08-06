@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks are safe to reference unbound */
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { PublicMirrorService } from '../public/public-mirror.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { Supply, SupplyCategory, SupplyUnit } from './entities/supply.entity';
 import { SupplyService } from './supply.service';
@@ -36,7 +37,9 @@ describe('SupplyService', () => {
         .fn()
         .mockResolvedValue({ getRepository: () => repo }),
     } as unknown as jest.Mocked<TenantContextService>;
-    service = new SupplyService(tenantContext);
+    service = new SupplyService(tenantContext, {
+      syncSupply: jest.fn(),
+    } as unknown as PublicMirrorService);
   });
 
   describe('listMine', () => {

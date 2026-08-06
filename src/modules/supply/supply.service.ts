@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ILike, Repository } from 'typeorm';
+import { PublicMirrorService } from '../public/public-mirror.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateSupplyDto } from './dto/create-supply.dto';
 import { UpdateSupplyDto } from './dto/update-supply.dto';
@@ -7,7 +8,10 @@ import { Supply } from './entities/supply.entity';
 
 @Injectable()
 export class SupplyService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly publicMirror: PublicMirrorService,
+  ) {}
 
   async listMine(): Promise<Supply[]> {
     const repo = await this.repo();
@@ -30,7 +34,13 @@ export class SupplyService {
     supply.name = dto.name;
     supply.category = dto.category;
     supply.unit = dto.unit;
-    return repo.save(supply);
+    const saved = await repo.save(supply);
+    // Las necesidades espejadas guardan el nombre/categoría del insumo copiado.
+    await this.publicMirror.syncSupply(
+      this.tenantContext.organizationId,
+      saved,
+    );
+    return saved;
   }
 
   async toggle(id: string): Promise<Supply> {

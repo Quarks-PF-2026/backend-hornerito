@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { OrganizationMembershipRole } from '../organization/entities/organization-membership.entity';
+import { PublicMirrorService } from '../public/public-mirror.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { schemaNameFor } from '../tenant/tenant-schema.util';
 import { CloudinaryService } from './cloudinary.service';
@@ -39,6 +40,7 @@ export class MediaService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly cloudinary: CloudinaryService,
+    private readonly publicMirror: PublicMirrorService,
   ) {}
 
   async listFor(
@@ -97,6 +99,10 @@ export class MediaService {
       await this.destroyQuietly(existing.publicId);
     }
 
+    if (ownerType === 'organization') {
+      await this.publicMirror.setOrganizationImage(ownerId, purpose, saved.url);
+    }
+
     return saved;
   }
 
@@ -109,6 +115,13 @@ export class MediaService {
     this.assertCanWrite(this.ownerConfig(media.ownerType), actor);
     await repo.delete({ id });
     await this.destroyQuietly(media.publicId);
+    if (media.ownerType === 'organization') {
+      await this.publicMirror.setOrganizationImage(
+        media.ownerId,
+        media.purpose,
+        null,
+      );
+    }
   }
 
   private ownerConfig(ownerType: string): MediaOwnerConfig {

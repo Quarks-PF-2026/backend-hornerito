@@ -4,6 +4,7 @@ import { User } from '../modules/auth/entities/user.entity';
 import { Organization } from '../modules/organization/entities/organization.entity';
 import { OrganizationMembership } from '../modules/organization/entities/organization-membership.entity';
 import { OrganizationInvitation } from '../modules/organization/entities/organization-invitation.entity';
+import { PublicNeed } from '../modules/public/entities/public-need.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -14,6 +15,7 @@ export const AppDataSource = new DataSource({
     Organization,
     OrganizationMembership,
     OrganizationInvitation,
+    PublicNeed,
   ],
   migrations: [__dirname + '/migrations/public/*{.ts,.js}'],
   migrationsTableName: 'migrations',

@@ -11,6 +11,7 @@ import { MediaModule } from './modules/media/media.module';
 import { NeedModule } from './modules/need/need.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { PostModule } from './modules/post/post.module';
+import { PublicModule } from './modules/public/public.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
 
@@ -37,6 +38,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     CollectionPointModule,
     GeocodingModule,
     MediaModule,
+    PublicModule,
   ],
   controllers: [AppController],
   providers: [AppService],

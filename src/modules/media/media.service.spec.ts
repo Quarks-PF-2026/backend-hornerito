@@ -4,6 +4,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { OrganizationMembershipRole } from '../organization/entities/organization-membership.entity';
+import { PublicMirrorService } from '../public/public-mirror.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CloudinaryService } from './cloudinary.service';
 import { Media } from './entities/media.entity';
@@ -70,6 +71,7 @@ describe('MediaService', () => {
     service = new MediaService(
       tenantContext,
       cloudinary as unknown as CloudinaryService,
+      { setOrganizationImage: jest.fn() } as unknown as PublicMirrorService,
     );
   });
 
