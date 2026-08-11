@@ -1,4 +1,9 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -95,11 +100,9 @@ export class OrganizationService {
           description: dto.description,
           address: dto.address,
           contact: dto.contact,
-          // HACK temporal: sin flujo de validación de admin todavía, toda
-          // organización nueva nace validada para no bloquear el resto de
-          // los módulos (insumos, necesidades, etc). Sacar cuando exista
-          // un endpoint real de validación.
-          status: OrganizationStatus.VALIDATED,
+          // Toda organización nace pendiente de validación (default de la
+          // entidad); un platform admin la valida o rechaza vía
+          // `/admin/organizations` (ver AdminOrganizationService).
         }),
       );
       await manager.save(
@@ -119,6 +122,30 @@ export class OrganizationService {
       throw error;
     }
 
+    return organization;
+  }
+
+  /** Usado por un platform admin (QK-13 CP-13-04). */
+  async validate(organizationId: string): Promise<Organization> {
+    const organization = await this.requireOrganization(organizationId);
+    organization.status = OrganizationStatus.VALIDATED;
+    organization.rejectReason = null;
+    return this.organizationRepository.save(organization);
+  }
+
+  /** Usado por un platform admin (QK-13 CP-13-05). */
+  async reject(organizationId: string, reason: string): Promise<Organization> {
+    const organization = await this.requireOrganization(organizationId);
+    organization.status = OrganizationStatus.REJECTED;
+    organization.rejectReason = reason;
+    return this.organizationRepository.save(organization);
+  }
+
+  private async requireOrganization(id: string): Promise<Organization> {
+    const organization = await this.organizationRepository.findById(id);
+    if (!organization) {
+      throw new NotFoundException('La organización no existe.');
+    }
     return organization;
   }
 }

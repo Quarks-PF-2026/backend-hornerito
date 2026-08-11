@@ -108,10 +108,24 @@ export class AuthService {
 
     // Una membresía deshabilitada no cuenta: el usuario no entra a esa
     // organización aunque siga teniendo cuenta.
-    const memberships = await this.membershipRepository.find({
-      where: { userId: user.id, active: true },
+    const allMemberships = await this.membershipRepository.find({
+      where: { userId: user.id },
     });
-    const only = memberships.length === 1 ? memberships[0] : undefined;
+    const activeMemberships = allMemberships.filter((m) => m.active);
+
+    // Si el usuario tiene al menos una membresía y NINGUNA está activa, es
+    // que un administrador lo deshabilitó explícitamente: se le rechaza el
+    // login (CP-15-02). Un usuario sin ninguna membresía todavía (recién
+    // registrado, sin organización creada) sí puede loguearse con
+    // normalidad para completar su onboarding.
+    if (allMemberships.length > 0 && activeMemberships.length === 0) {
+      throw new UnauthorizedException(
+        'Tu cuenta está deshabilitada. Contactá a un administrador.',
+      );
+    }
+
+    const only =
+      activeMemberships.length === 1 ? activeMemberships[0] : undefined;
 
     return this.issueAccessToken(user, only?.organizationId, only?.role);
   }

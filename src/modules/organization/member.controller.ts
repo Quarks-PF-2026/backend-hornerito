@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -27,8 +28,11 @@ export class MemberController {
   constructor(private readonly memberService: MemberService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.memberService.list(user.orgId!);
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('search') search?: string,
+  ) {
+    return this.memberService.list(user.orgId!, search);
   }
 
   @Get('invitations')

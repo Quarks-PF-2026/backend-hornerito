@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PlatformAdminGuard } from './guards/platform-admin.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from './entities/user.entity';
@@ -36,8 +37,15 @@ import { TypeOrmUserRepository } from './repositories/typeorm-user.repository';
     JwtStrategy,
     JwtAuthGuard,
     RolesGuard,
+    PlatformAdminGuard,
     { provide: USER_REPOSITORY, useClass: TypeOrmUserRepository },
   ],
-  exports: [JwtAuthGuard, RolesGuard, AuthService, USER_REPOSITORY],
+  exports: [
+    JwtAuthGuard,
+    RolesGuard,
+    PlatformAdminGuard,
+    AuthService,
+    USER_REPOSITORY,
+  ],
 })
 export class AuthModule {}

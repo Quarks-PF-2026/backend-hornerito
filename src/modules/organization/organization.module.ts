@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { AdminOrganizationController } from './admin-organization.controller';
 import { Organization } from './entities/organization.entity';
 import { OrganizationInvitation } from './entities/organization-invitation.entity';
 import { OrganizationMembership } from './entities/organization-membership.entity';
@@ -27,7 +28,12 @@ import { TenantProvisioningService } from './tenant/tenant-provisioning.service'
       OrganizationInvitation,
     ]),
   ],
-  controllers: [OrganizationController, MemberController, InvitationController],
+  controllers: [
+    OrganizationController,
+    MemberController,
+    InvitationController,
+    AdminOrganizationController,
+  ],
   providers: [
     OrganizationService,
     MemberService,

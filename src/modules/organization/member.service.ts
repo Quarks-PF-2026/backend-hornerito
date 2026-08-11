@@ -65,7 +65,7 @@ export class MemberService {
     private readonly config: ConfigService,
   ) {}
 
-  async list(organizationId: string): Promise<MemberView[]> {
+  async list(organizationId: string, search?: string): Promise<MemberView[]> {
     const memberships =
       await this.membershipRepository.findByOrganizationId(organizationId);
     const users = await this.userRepository.findByIds(
@@ -73,7 +73,7 @@ export class MemberService {
     );
     const usersById = new Map(users.map((user) => [user.id, user]));
 
-    return memberships
+    const views = memberships
       .filter((membership) => usersById.has(membership.userId))
       .map((membership) => {
         const user = usersById.get(membership.userId)!;
@@ -86,6 +86,18 @@ export class MemberService {
           createdAt: membership.createdAt,
         };
       });
+
+    const term = search?.trim().toLowerCase();
+    if (!term) {
+      return views;
+    }
+    return views.filter(
+      (view) =>
+        view.name.toLowerCase().includes(term) ||
+        view.email.toLowerCase().includes(term) ||
+        view.role.toLowerCase().includes(term) ||
+        ROLE_LABEL[view.role].toLowerCase().includes(term),
+    );
   }
 
   async changeRole(

@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import {
   Organization,
   OrganizationStatus,
@@ -46,10 +46,24 @@ export class TenantGuard implements CanActivate {
     // La membresía se lee en cada request (y no del JWT) para que deshabilitar
     // a un usuario o cambiarle el rol surta efecto sin esperar a que expire su
     // token.
-    const membership = await this.membershipRepository.findOneBy({
-      userId: request.user?.id,
-      organizationId: orgId,
-    });
+    let membership: OrganizationMembership | null;
+    try {
+      membership = await this.membershipRepository.findOneBy({
+        userId: request.user?.id,
+        organizationId: orgId,
+      });
+    } catch (error) {
+      // Un id mal formado (ej. un JWT armado a mano, o corrupto) no es "no
+      // pertenece a la organización", pero tampoco debe filtrarse como 500:
+      // Postgres rechaza el cast a uuid con un error crudo (22P02).
+      if (
+        error instanceof QueryFailedError &&
+        error.driverError?.code === '22P02'
+      ) {
+        throw new ForbiddenException('No pertenecés a esa organización.');
+      }
+      throw error;
+    }
     if (!membership) {
       throw new ForbiddenException('No pertenecés a esa organización.');
     }

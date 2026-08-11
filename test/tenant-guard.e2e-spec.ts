@@ -17,6 +17,7 @@ import { OrganizationStatus } from '../src/modules/organization/entities/organiz
 import { TenantGuard } from '../src/modules/tenant/tenant.guard';
 import { TenantModule } from '../src/modules/tenant/tenant.module';
 import { schemaNameFor } from '../src/modules/tenant/tenant-schema.util';
+import { cleanupUsers, registerAndLogin, uniqueEmail } from './sprint2/helpers';
 
 @Controller('tenant-probe')
 class TenantProbeController {
@@ -35,6 +36,7 @@ describe('TenantGuard (e2e)', () => {
   let dataSource: DataSource;
   let jwtService: JwtService;
   const createdOrgIds: string[] = [];
+  const emails: string[] = [];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -62,6 +64,7 @@ describe('TenantGuard (e2e)', () => {
         createdOrgIds,
       ]);
     }
+    await cleanupUsers(dataSource, emails);
     await app.close();
   });
 
@@ -112,9 +115,25 @@ describe('TenantGuard (e2e)', () => {
 
   it('allows a token pointing to a validated organization', async () => {
     const orgId = await makeOrganization(OrganizationStatus.VALIDATED);
+
+    // A diferencia de los otros casos, este llega hasta la consulta de
+    // membresía (ver TenantGuard), que además de exigir un userId con forma
+    // de uuid hace join contra `users` (FK real, aunque el entity no declare
+    // la relación) — por eso hace falta un usuario registrado de verdad, no
+    // un uuid inventado.
+    const email = uniqueEmail('tenant-guard');
+    emails.push(email);
+    const session = await registerAndLogin(app, email);
+
+    await dataSource.query(
+      `INSERT INTO organization_memberships ("userId", "organizationId", role, active)
+       VALUES ($1, $2, 'owner', true)`,
+      [session.userId, orgId],
+    );
+
     const token = jwtService.sign({
-      sub: 'user-1',
-      email: 'x@test.com',
+      sub: session.userId,
+      email,
       orgId,
     });
     await request(app.getHttpServer())

@@ -1,0 +1,6 @@
+services:
+  # El 5432 del host ya lo ocupa otro contenedor tuyo (app-muni-db). El
+  # backend igual llega a esta DB por nombre de servicio ("db") dentro de la
+  # red interna de compose, así que no hace falta publicarlo al host.
+  db:
+    ports: !override []

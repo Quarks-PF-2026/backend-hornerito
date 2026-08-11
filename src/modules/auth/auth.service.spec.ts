@@ -222,8 +222,8 @@ describe('AuthService', () => {
       const passwordHash = await bcrypt.hash('password1', 10);
       const user = makeUser({ emailVerified: true, passwordHash });
       repo.findByEmail.mockResolvedValue(user);
-      // El repositorio filtra por active: true, así que una membresía
-      // deshabilitada no llega hasta acá.
+      // El usuario todavía no tiene ninguna membresía (recién registrado):
+      // debe poder loguearse igual para completar el onboarding.
       membershipRepo.find.mockResolvedValue([]);
 
       const result = await service.login({
@@ -231,8 +231,11 @@ describe('AuthService', () => {
         password: 'password1',
       });
 
+      // Trae TODAS las membresías (no solo las activas): necesita distinguir
+      // "nunca tuvo organización" (login permitido) de "las tenía y se las
+      // deshabilitaron" (login rechazado, CP-15-02).
       expect(membershipRepo.find).toHaveBeenCalledWith({
-        where: { userId: user.id, active: true },
+        where: { userId: user.id },
       });
       expect(jwt.sign).toHaveBeenCalledWith({
         sub: user.id,
@@ -242,13 +245,13 @@ describe('AuthService', () => {
       expect(result.role).toBeNull();
     });
 
-    it('does not pick an orgId when the user belongs to several organizations', async () => {
+    it('does not pick an orgId when the user belongs to several active organizations', async () => {
       const passwordHash = await bcrypt.hash('password1', 10);
       const user = makeUser({ emailVerified: true, passwordHash });
       repo.findByEmail.mockResolvedValue(user);
       membershipRepo.find.mockResolvedValue([
-        { organizationId: 'org-1' } as OrganizationMembership,
-        { organizationId: 'org-2' } as OrganizationMembership,
+        { organizationId: 'org-1', active: true } as OrganizationMembership,
+        { organizationId: 'org-2', active: true } as OrganizationMembership,
       ]);
 
       await service.login({ email: user.email, password: 'password1' });
@@ -258,6 +261,19 @@ describe('AuthService', () => {
         email: user.email,
         orgId: undefined,
       });
+    });
+
+    it('rejects the login when every membership the user has is disabled (CP-15-02)', async () => {
+      const passwordHash = await bcrypt.hash('password1', 10);
+      const user = makeUser({ emailVerified: true, passwordHash });
+      repo.findByEmail.mockResolvedValue(user);
+      membershipRepo.find.mockResolvedValue([
+        { organizationId: 'org-1', active: false } as OrganizationMembership,
+      ]);
+
+      await expect(
+        service.login({ email: user.email, password: 'password1' }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
