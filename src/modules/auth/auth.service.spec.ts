@@ -15,6 +15,7 @@ import {
   OrganizationMembershipRole,
 } from '../organization/entities/organization-membership.entity';
 import { IUserRepository } from './repositories/user-repository.interface';
+import { PasswordResetMailService } from './mail/password-reset-mail.service';
 import { VerificationMailService } from './mail/verification-mail.service';
 
 function makeUser(overrides: Partial<User> = {}): User {
@@ -24,8 +25,11 @@ function makeUser(overrides: Partial<User> = {}): User {
     email: 'maria@example.com',
     passwordHash: 'hashed',
     emailVerified: false,
+    isPlatformAdmin: false,
     verificationToken: 'valid-token',
     verificationTokenExpiresAt: new Date(Date.now() + 60_000),
+    resetPasswordToken: null,
+    resetPasswordTokenExpiresAt: null,
     termsAcceptedAt: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -38,6 +42,7 @@ describe('AuthService', () => {
   let repo: jest.Mocked<IUserRepository>;
   let membershipRepo: jest.Mocked<Repository<OrganizationMembership>>;
   let mail: jest.Mocked<VerificationMailService>;
+  let resetMail: jest.Mocked<PasswordResetMailService>;
   let jwt: jest.Mocked<JwtService>;
 
   beforeEach(() => {
@@ -46,6 +51,7 @@ describe('AuthService', () => {
       findByIds: jest.fn().mockResolvedValue([]),
       findByEmail: jest.fn(),
       findByVerificationToken: jest.fn(),
+      findByResetPasswordToken: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
     };
@@ -56,10 +62,13 @@ describe('AuthService', () => {
     mail = {
       send: jest.fn(),
     } as unknown as jest.Mocked<VerificationMailService>;
+    resetMail = {
+      send: jest.fn(),
+    } as unknown as jest.Mocked<PasswordResetMailService>;
     jwt = {
       sign: jest.fn().mockReturnValue('signed-jwt'),
     } as unknown as jest.Mocked<JwtService>;
-    service = new AuthService(repo, membershipRepo, mail, jwt);
+    service = new AuthService(repo, membershipRepo, mail, resetMail, jwt);
   });
 
   describe('register', () => {
@@ -321,4 +330,118 @@ describe('AuthService', () => {
       );
     });
   });
+
+  describe('forgotPassword', () => {
+    it('generates a token, saves user and sends mail when email exists', async () => {
+      const user = makeUser();
+      repo.findByEmail.mockResolvedValue(user);
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+
+      const res = await service.forgotPassword({ email: user.email });
+
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resetPasswordToken: expect.any(String),
+          resetPasswordTokenExpiresAt: expect.any(Date),
+        }),
+      );
+      expect(resetMail.send).toHaveBeenCalledTimes(1);
+      expect(res.message).toContain('Si el correo está registrado');
+    });
+
+    it('returns same security message when email does not exist (PU-3)', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+
+      const res = await service.forgotPassword({ email: 'nonexistent@example.com' });
+
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(resetMail.send).not.toHaveBeenCalled();
+      expect(res.message).toContain('Si el correo está registrado');
+    });
+  });
+
+  describe('verifyResetToken', () => {
+    it('succeeds for valid unexpired token', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'valid-reset-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() + 60_000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+
+      await expect(service.verifyResetToken('valid-reset-token')).resolves.toBeUndefined();
+    });
+
+    it('rejects an expired token (PU-4)', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'expired-reset-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() - 1000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+
+      await expect(service.verifyResetToken('expired-reset-token')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('rejects an invalid token', async () => {
+      repo.findByResetPasswordToken.mockResolvedValue(null);
+
+      await expect(service.verifyResetToken('unknown-token')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('updates password and clears token fields when valid (PU-2)', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'valid-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() + 60_000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+
+      await service.resetPassword({
+        token: 'valid-token',
+        password: 'newPassword123',
+        confirmPassword: 'newPassword123',
+      });
+
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resetPasswordToken: null,
+          resetPasswordTokenExpiresAt: null,
+        }),
+      );
+      const savedUser = repo.save.mock.calls[0][0];
+      expect(await bcrypt.compare('newPassword123', savedUser.passwordHash)).toBe(true);
+    });
+
+    it('rejects mismatched passwords', async () => {
+      await expect(
+        service.resetPassword({
+          token: 'some-token',
+          password: 'newPassword123',
+          confirmPassword: 'differentPassword',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects reset with expired token', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'expired-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() - 1000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+
+      await expect(
+        service.resetPassword({
+          token: 'expired-token',
+          password: 'newPassword123',
+          confirmPassword: 'newPassword123',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
 });
+

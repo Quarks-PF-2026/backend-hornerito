@@ -50,3 +50,16 @@ export function invitationMail(
     text: `Te invitaron a ${organizationName} en Hornerito como ${roleLabel}: ${url}`,
   };
 }
+
+export function passwordResetMail(to: string, url: string): MailMessage {
+  return {
+    to,
+    subject: 'Restablecé tu contraseña en Hornerito',
+    html: layout(
+      'Restablecer contraseña',
+      '<p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en Hornerito.</p>',
+      { url, label: 'Restablecer contraseña' },
+    ),
+    text: `Restablecé tu contraseña en Hornerito: ${url}`,
+  };
+}

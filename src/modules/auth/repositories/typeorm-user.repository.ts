@@ -26,6 +26,10 @@ export class TypeOrmUserRepository implements IUserRepository {
     return this.repo.findOneBy({ verificationToken: token });
   }
 
+  findByResetPasswordToken(token: string): Promise<User | null> {
+    return this.repo.findOneBy({ resetPasswordToken: token });
+  }
+
   create(user: Partial<User>): Promise<User> {
     return this.repo.save(this.repo.create(user));
   }

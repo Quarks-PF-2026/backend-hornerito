@@ -35,6 +35,12 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   verificationTokenExpiresAt: Date | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  resetPasswordToken: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  resetPasswordTokenExpiresAt: Date | null;
+
   @Column({ type: 'timestamptz' })
   termsAcceptedAt: Date;
 

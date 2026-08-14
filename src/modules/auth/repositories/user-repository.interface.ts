@@ -10,6 +10,7 @@ export interface IUserRepository {
   findByIds(ids: string[]): Promise<User[]>;
   findByEmail(email: string): Promise<User | null>;
   findByVerificationToken(token: string): Promise<User | null>;
+  findByResetPasswordToken(token: string): Promise<User | null>;
   create(user: Partial<User>): Promise<User>;
   save(user: User): Promise<User>;
 }

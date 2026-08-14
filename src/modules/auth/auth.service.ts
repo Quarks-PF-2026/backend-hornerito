@@ -16,13 +16,17 @@ import {
   OrganizationMembershipRole,
 } from '../organization/entities/organization-membership.entity';
 import { User } from './entities/user.entity';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import type { IUserRepository } from './repositories/user-repository.interface';
 import { USER_REPOSITORY } from './repositories/user-repository.interface';
+import { PasswordResetMailService } from './mail/password-reset-mail.service';
 import { VerificationMailService } from './mail/verification-mail.service';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const PASSWORD_SALT_ROUNDS = 10;
 
 export interface RegisterResult {
@@ -42,6 +46,7 @@ export class AuthService {
     @InjectRepository(OrganizationMembership)
     private readonly membershipRepository: Repository<OrganizationMembership>,
     private readonly verificationMailService: VerificationMailService,
+    private readonly passwordResetMailService: PasswordResetMailService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -175,5 +180,68 @@ export class AuthService {
       user: { id: user.id, name: user.name, email: user.email },
       role: role ?? null,
     };
+  }
+
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    const user = await this.userRepository.findByEmail(dto.email);
+    if (user) {
+      const resetPasswordToken = randomUUID();
+      user.resetPasswordToken = resetPasswordToken;
+      user.resetPasswordTokenExpiresAt = new Date(
+        Date.now() + RESET_TOKEN_TTL_MS,
+      );
+      await this.userRepository.save(user);
+      await this.passwordResetMailService.send(
+        user.email,
+        resetPasswordToken,
+      );
+    }
+    return {
+      message:
+        'Si el correo está registrado en nuestro sistema, recibirás un enlace de restablecimiento.',
+    };
+  }
+
+  async verifyResetToken(token: string): Promise<void> {
+    const user = await this.userRepository.findByResetPasswordToken(token);
+    if (
+      !user ||
+      !user.resetPasswordTokenExpiresAt ||
+      user.resetPasswordTokenExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException(
+        'El enlace de restablecimiento expiró o es inválido.',
+      );
+    }
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException('Las contraseñas no coinciden.');
+    }
+
+    const user = await this.userRepository.findByResetPasswordToken(dto.token);
+    if (
+      !user ||
+      !user.resetPasswordTokenExpiresAt ||
+      user.resetPasswordTokenExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException(
+        'El enlace de restablecimiento expiró o es inválido.',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.password,
+      PASSWORD_SALT_ROUNDS,
+    );
+
+    user.passwordHash = passwordHash;
+    user.resetPasswordToken = null;
+    user.resetPasswordTokenExpiresAt = null;
+
+    await this.userRepository.save(user);
   }
 }
