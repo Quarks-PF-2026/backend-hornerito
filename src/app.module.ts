@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { CollectionPointModule } from './modules/collection-point/collection-point.module';
+import { DonationModule } from './modules/donation/donation.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MediaModule } from './modules/media/media.module';
@@ -36,6 +37,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     NeedModule,
     PostModule,
     CollectionPointModule,
+    DonationModule,
     GeocodingModule,
     MediaModule,
     PublicModule,
