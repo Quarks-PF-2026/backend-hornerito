@@ -164,6 +164,8 @@ Las migraciones corren solas al bootstrapear (`migrationsRun: true`).
 
 | Busco | Está en |
 |---|---|
+| Qué pide la cátedra y qué hay que corregir | `../lab-hornerito/catedra/HALLAZGOS-2026-08-15.md` |
+| Documentación de cátedra en crudo | `../lab-hornerito/catedra/base 15-08-2026/` |
 | Cómo trabajar en este repo | `CLAUDE.md` |
 | Qué dice el negocio | `DOMAIN.md` |
 | Qué agente usar y cuándo | `.claude/AGENTS.md` |
