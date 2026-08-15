@@ -231,7 +231,7 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 Cada user story de Jira tiene clave `QK-NN`, y la misma clave aparece en tres lugares:
 
 ```
-.jira/QK-NN.md                  el requisito
+QK-NN en Jira                   el requisito
 test/acceptance/QK-NN.feature   la verificación
 feat(alcance): ... (QK-NN)      el cambio
 ```
@@ -244,11 +244,11 @@ feat(alcance): ... (QK-NN)      el cambio
 > - Una rama junta varias historias, así que el gate de aceptación en el PR verifica un conjunto, no una historia sola.
 > - Sin aprobación obligatoria, **el CI informa pero no bloquea**: nadie mira el resultado antes de mergear salvo el propio autor. Si más adelante se quiere que ATDD sea un gate real y no una convención, esto es lo primero que hay que cambiar.
 
-**[A DEFINIR]** Tipos de issue de Jira y en qué campo viven los criterios de aceptación. Se resuelve en la próxima iteración con un export de muestra en `.jira/raw/`; ahí se ajusta el importador contra los headers reales.
+**[CONFIRMADO]** Tipos de issue del proyecto QK, en español: `Epic`, `Historia`, `Tarea`, `Error`, `Feature`, `Recurso`, `Subtask`. Las user stories son de tipo `Historia`. Los criterios de aceptación no están en `description` (viene vacío): viven en un campo personalizado del proyecto, junto con las reglas, las pruebas de usuario y las notas de implementación. Detalle operativo (nombres de campos y tools) en la skill `jira-ticket`.
 
 ## 15. Preguntas abiertas
 
-**Cerradas** (rondas del 2026-08-15): problema que resuelve el producto, catálogo de insumos, estados de donación, validación y repostulación de organizaciones, exceso sobre lo requerido, ajuste manual con traza, donante con o sin cuenta, quién registra donaciones, imágenes por entidad, convención de ramas, aprobación de PR.
+**Cerradas** (rondas del 2026-08-15): problema que resuelve el producto, catálogo de insumos, estados de donación, validación y repostulación de organizaciones, exceso sobre lo requerido, ajuste manual con traza, donante con o sin cuenta, quién registra donaciones, imágenes por entidad, convención de ramas, aprobación de PR, tipos de issue y campo de criterios de aceptación de Jira.
 
 **Abiertas:**
 
@@ -259,4 +259,3 @@ feat(alcance): ... (QK-NN)      el cambio
 5. **Roles y permisos** — la tabla de §3 es provisoria; ¿cuál es la definitiva?
 6. **Imágenes** — quién puede subirlas, si hay moderación (§9)
 7. **Reglas acordadas y no implementadas** — relevar con el equipo completo si hay más allá de las 6 de §12
-8. **Jira** — tipos de issue y campo de criterios de aceptación (§14)

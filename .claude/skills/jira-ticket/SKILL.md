@@ -11,7 +11,7 @@ El canal es el **MCP oficial de Atlassian**, configurado en `.mcp.json` en la ra
 
 Pedile al MCP la historia puntual que vas a trabajar, nunca el sprint entero — es la misma regla que regía con el CSV normalizado, y sigue siendo la razón por la que no se carga todo el board.
 
-`[A CONFIRMAR tras autenticar el MCP]`: nombre exacto de la tool de lectura y la forma en que devuelve descripción, criterios de aceptación, estimación, sprint e impedimentos.
+Tool: `getJiraIssue` (`searchJiraIssuesUsingJql` para buscar), con el `cloudId` como primer parámetro. `description` viene vacío: criterios de aceptación, reglas, pruebas de usuario y notas de implementación viven en `customfield_10106` (ADF). Estimación en `customfield_10016`, sprint en `customfield_10020` (array; el activo tiene `state: "active"`), épica padre en `parent`.
 
 ## Gate DoR — antes de arrancar el ciclo
 
@@ -31,7 +31,14 @@ Si falla alguno, **el ciclo se detiene acá**: reportá exactamente qué falta y
 
 El agente puede transicionar el ticket y asignarlo a un usuario — nada más (`CLAUDE.md` §9). Usalo al cerrar el ciclo (gate DoD, `.claude/AGENTS.md` §Gates): la transición se hace explícita dejando dicho que la validación del Product Owner queda pendiente hasta la Sprint Review.
 
-`[A CONFIRMAR tras autenticar el MCP]`: nombres reales de los estados del board (para saber a qué estado transicionar en cada paso del ciclo).
+Estados del board (seis, todas las transiciones globales y sin condiciones): `Idea` (10000) → `Por hacer` (10001) → `Listo` (10040, transición "Ready") → `En curso` (10002) → `En revisión` (10003) → `Finalizado` (10004). Ojo con el nombre: el estado `Listo` **no es el final**, es el DoR cumplido; el final es `Finalizado`.
+
+Mapeo al ciclo ATDD:
+
+- Gate DoR aprobado → `Listo`
+- Empieza la implementación → `En curso`
+- Cierran las condiciones 1-4 del gate DoD → `En revisión`
+- El Product Owner valida en la Sprint Review → `Finalizado` (transición **humana**, no la hace el agente)
 
 ## Trazabilidad
 
@@ -41,22 +48,6 @@ La misma clave se repite en tres lugares (`DOMAIN.md` §13):
 QK-26 en Jira                    el requisito
 test/acceptance/QK-26.feature    la verificación
 feat(donaciones): ... (QK-26)    el cambio
-```
-
-Si los tres no coinciden, la trazabilidad está rota y el tomo no cierra.
-
-## Plantilla de user story
-
-Para escribir tickets nuevos que se traduzcan bien a Gherkin: `../lab-hornerito/templates/user-story.md`. Sus criterios ya vienen en formato Dado/Cuando/Entonces, que es lo que hace que el paso a `.feature` sea mecánico en vez de interpretativo.
-
-## Trazabilidad
-
-La misma clave se repite en tres lugares (`DOMAIN.md` §13):
-
-```
-.jira/QK-26.md                  el requisito
-test/acceptance/QK-26.feature   la verificación
-feat(donaciones): ... (QK-26)   el cambio
 ```
 
 Si los tres no coinciden, la trazabilidad está rota y el tomo no cierra.

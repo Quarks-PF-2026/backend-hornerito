@@ -144,6 +144,8 @@ Integración `develop`, release `main`.
 
 El canal es el **MCP oficial de Atlassian** (`https://mcp.atlassian.com/v1/mcp/authv2`), configurado en `.mcp.json` en la raíz del backend. Cada integrante autentica por OAuth en el navegador la primera vez; no hay token que gestionar. Los permisos del MCP siguen a los del usuario autenticado — el agente solo puede lo que esa persona ya podía en Jira.
 
+Site `https://quarksgrupo.atlassian.net`, cloudId `253d5eb4-6be1-4895-af92-31ec6e55a598`, proyecto `QK`. Detalle de campos, tools y estados del board en la skill `jira-ticket`.
+
 Alcance concedido al agente: **leer la historia, cambiar su estado y asignarla a un usuario**. Nada de editar campos ni borrar.
 
 El canal por export CSV (`npm run jira:import`) quedó obsoleto y fue retirado del repo; la dinámica y su fundamento quedaron archivados en `../lab-hornerito/archivo/jira-csv/`. Fundamento del cambio en ADR-004.

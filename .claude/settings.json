@@ -46,7 +46,15 @@
       "Bash(find*)",
       "Bash(docker compose*)",
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "mcp__atlassian__getJiraIssue",
+      "mcp__atlassian__getTransitionsForJiraIssue",
+      "mcp__atlassian__searchJiraIssuesUsingJql",
+      "mcp__atlassian__getVisibleJiraProjects",
+      "mcp__atlassian__getAccessibleAtlassianResources",
+      "mcp__atlassian__atlassianUserInfo",
+      "mcp__atlassian__lookupJiraAccountId",
+      "mcp__atlassian__getJiraProjectIssueTypesMetadata"
     ],
     "ask": [
       "Bash(npm install*)",
@@ -57,7 +65,10 @@
       "Bash(git push*)",
       "Bash(gh pr create*)",
       "Bash(npm run migration:revert)",
-      "Edit(DOMAIN.md)"
+      "Edit(DOMAIN.md)",
+      "mcp__atlassian__transitionJiraIssue",
+      "mcp__atlassian__editJiraIssue",
+      "mcp__atlassian__addCommentToJiraIssue"
     ],
     "deny": [
       "Bash(git push --force*)",
@@ -68,7 +79,10 @@
       "Bash(rm -rf*)",
       "Bash(npm publish*)",
       "Edit(.env)",
-      "Edit(.env.*)"
+      "Edit(.env.*)",
+      "mcp__atlassian__createJiraIssue",
+      "mcp__atlassian__createConfluencePage",
+      "mcp__atlassian__updateConfluencePage"
     ]
   },
   "hooks": {

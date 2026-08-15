@@ -63,6 +63,7 @@ Ordenada por lo que más duele. Cada entrada dice **por qué existe**, no solo q
 | 8 | Las entidades no declaran relaciones TypeORM | Decisión implícita, nunca documentada | Un `find` con `relations` falla en runtime. Es la trampa que más rápido encuentra alguien nuevo |
 | 9 | `lab-hornerito` no está en GitHub | Se creó local en esta iteración | **Los otros 5 integrantes no lo tienen.** Los ADRs y el catálogo de skills no se comparten |
 | 10 | 15 errores de ESLint preexistentes en el backend | `npm run lint` corre con `--fix`, así que nunca se vieron: los arregla en el working tree de quien lo corre y siguen en el repo | El job de lint del CI está en `continue-on-error` por esto. Detalle: `no-unsafe-*` en los decoradores de auth y en `tenant.guard.ts`, `require-await` en cuatro `.spec.ts`, un `no-unused-vars` en `qk-15-users.e2e-spec.ts`, un `no-unnecessary-type-assertion` en `test/sprint2/helpers.ts` |
+| 11 | El MCP de Atlassian se usa con una cuenta compartida del equipo (`quarksgrupo@outlook.com`), además de las individuales | No se definió una convención de qué cuenta usar para el canal | Si el agente opera con la compartida, toda transición o asignación queda registrada como "Quarks": se pierde la trazabilidad de quién hizo qué en Jira |
 
 ## 4. Decisiones pendientes
 
@@ -74,6 +75,7 @@ Nadie debería implementar sobre estas sin resolverlas primero.
 | 2 | Alcance exacto de "necesidad como plantilla reutilizable" | Cualquier trabajo sobre necesidades |
 | 3 | ¿Se sube `lab-hornerito` a GitHub? ¿Como repo propio o submódulo? | Deuda 9 |
 | 4 | ¿El job de aceptación en CI pasa a bloqueante y cuándo? | Depende de la deuda 1 |
+| 5 | `DOMAIN.md` §7 dice que la donación lleva patrón State; el ticket QK-26 refinado dice explícitamente "no hay estados". Incompatibles, sin resolver | Cualquier trabajo sobre el modelo de donaciones |
 
 ### Confirmadas en la encuesta del 2026-08-15
 
@@ -101,8 +103,7 @@ definió y el código todavía no las refleja. Detalle en `DOMAIN.md` §12 y §1
 |---|---|---|---|
 | 1 | **Reiniciar la sesión de Claude Code** | Los hooks y `settings.json` se cargan al arrancar. En la sesión donde se instalaron no están activos | Pedir `npm run test:unit` sin token: tiene que bloquearse con la explicación del gate |
 | 2 | **Indexar el grafo de código** | `CLAUDE.md` §5 obliga a explorar con `codebase-memory` antes que con Read/Grep, pero el repo no está indexado. Sin esto, cada agente cae al modo caro | Al abrir sesión, el hook deja de pedir el índice. Corre una vez: `index_repository` con `mode='full'`, `persistence=true` |
-| 3 | **Autenticar el MCP de Atlassian en cada máquina** | El canal pasó de export CSV a MCP (2026-08-15, ver `CLAUDE.md` §9 y ADR-004); cada integrante tiene que autenticar por OAuth la primera vez para que el agente pueda leer historias | El agente lee una historia real del board sin error de autenticación |
-| 4 | **Descubrir los nombres reales de los estados del board de Jira** | Hace falta para poder configurar a qué estado transiciona el ciclo en cada paso (gate DoD). No se puede saber hasta que el MCP esté autenticado | `[A CONFIRMAR tras autenticar el MCP]` en la skill `jira-ticket` reemplazado por los nombres reales |
+| 3 | **Autenticar el MCP de Atlassian en cada máquina** | El canal pasó de export CSV a MCP (2026-08-15, ver `CLAUDE.md` §9 y ADR-004); cada integrante tiene que autenticar por OAuth la primera vez para que el agente pueda leer historias | El agente lee una historia real del board sin error de autenticación. Verificado el 2026-08-15 en una máquina; pendiente en las otras cinco |
 
 ### 5.2 Bloqueante para que ATDD sea un gate y no una convención
 
