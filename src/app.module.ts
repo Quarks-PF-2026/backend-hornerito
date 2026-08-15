@@ -15,6 +15,7 @@ import { PostModule } from './modules/post/post.module';
 import { PublicModule } from './modules/public/public.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
+import { VolunteeringModule } from './modules/volunteering/volunteering.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     PostModule,
     CollectionPointModule,
     DonationModule,
+    VolunteeringModule,
     GeocodingModule,
     MediaModule,
     PublicModule,
