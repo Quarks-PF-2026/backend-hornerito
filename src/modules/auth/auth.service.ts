@@ -67,8 +67,7 @@ export class AuthService {
       name: dto.name,
       email: dto.email,
       passwordHash,
-      // TODO: volver a `false` cuando el envío real de email esté cableado.
-      emailVerified: true,
+      emailVerified: false,
       verificationToken,
       verificationTokenExpiresAt: new Date(
         Date.now() + VERIFICATION_TOKEN_TTL_MS,
@@ -97,6 +96,29 @@ export class AuthService {
     user.verificationToken = null;
     user.verificationTokenExpiresAt = null;
     await this.userRepository.save(user);
+  }
+
+  /**
+   * Reenvía el correo de verificación. Como `forgotPassword`, responde
+   * siempre igual: quien pregunta no puede deducir si el correo existe.
+   */
+  async resendVerification(
+    dto: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    const user = await this.userRepository.findByEmail(dto.email);
+    if (user && !user.emailVerified) {
+      const verificationToken = randomUUID();
+      user.verificationToken = verificationToken;
+      user.verificationTokenExpiresAt = new Date(
+        Date.now() + VERIFICATION_TOKEN_TTL_MS,
+      );
+      await this.userRepository.save(user);
+      await this.verificationMailService.send(user.email, verificationToken);
+    }
+    return {
+      message:
+        'Si el correo está registrado y sin verificar, te enviamos un nuevo enlace.',
+    };
   }
 
   async login(dto: LoginDto): Promise<LoginResult> {
@@ -182,9 +204,7 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(
-    dto: ForgotPasswordDto,
-  ): Promise<{ message: string }> {
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
     const user = await this.userRepository.findByEmail(dto.email);
     if (user) {
       const resetPasswordToken = randomUUID();
@@ -193,10 +213,7 @@ export class AuthService {
         Date.now() + RESET_TOKEN_TTL_MS,
       );
       await this.userRepository.save(user);
-      await this.passwordResetMailService.send(
-        user.email,
-        resetPasswordToken,
-      );
+      await this.passwordResetMailService.send(user.email, resetPasswordToken);
     }
     return {
       message:
@@ -233,10 +250,7 @@ export class AuthService {
       );
     }
 
-    const passwordHash = await bcrypt.hash(
-      dto.password,
-      PASSWORD_SALT_ROUNDS,
-    );
+    const passwordHash = await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS);
 
     user.passwordHash = passwordHash;
     user.resetPasswordToken = null;

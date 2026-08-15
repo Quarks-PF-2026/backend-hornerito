@@ -33,6 +33,13 @@ export class AuthController {
     return this.authService.verifyEmail(query.token);
   }
 
+  // Reusa ForgotPasswordDto: el body es el mismo `{ email }` validado.
+  @Post('resend-verification')
+  @HttpCode(200)
+  resendVerification(@Body() dto: ForgotPasswordDto) {
+    return this.authService.resendVerification(dto);
+  }
+
   @Post('login')
   @HttpCode(200)
   login(@Body() dto: LoginDto) {

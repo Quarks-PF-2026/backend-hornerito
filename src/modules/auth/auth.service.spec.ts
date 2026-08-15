@@ -93,8 +93,7 @@ describe('AuthService', () => {
       expect(
         await bcrypt.compare(validDto.password, created.passwordHash!),
       ).toBe(true);
-      // TODO: volver a false cuando el envío real de email esté cableado.
-      expect(created.emailVerified).toBe(true);
+      expect(created.emailVerified).toBe(false);
       expect(created.verificationToken).toBeTruthy();
       expect(mail.send).toHaveBeenCalledWith(
         validDto.email,
@@ -154,6 +153,55 @@ describe('AuthService', () => {
       await expect(service.verifyEmail('valid-token')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('resendVerification', () => {
+    const genericMessage =
+      'Si el correo está registrado y sin verificar, te enviamos un nuevo enlace.';
+
+    it('issues a fresh token and resends the email to an unverified account', async () => {
+      const user = makeUser({ verificationToken: 'old-token' });
+      repo.findByEmail.mockResolvedValue(user);
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+
+      const result = await service.resendVerification({
+        email: user.email,
+      });
+
+      expect(user.verificationToken).not.toBe('old-token');
+      expect(user.verificationTokenExpiresAt!.getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+      expect(repo.save).toHaveBeenCalledWith(user);
+      expect(mail.send).toHaveBeenCalledWith(
+        user.email,
+        user.verificationToken,
+      );
+      expect(result).toEqual({ message: genericMessage });
+    });
+
+    it('does nothing for an already verified account but answers the same', async () => {
+      repo.findByEmail.mockResolvedValue(makeUser({ emailVerified: true }));
+
+      const result = await service.resendVerification({
+        email: 'maria@example.com',
+      });
+
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(mail.send).not.toHaveBeenCalled();
+      expect(result).toEqual({ message: genericMessage });
+    });
+
+    it('does not reveal that an unknown email is not registered', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+
+      const result = await service.resendVerification({
+        email: 'nadie@example.com',
+      });
+
+      expect(mail.send).not.toHaveBeenCalled();
+      expect(result).toEqual({ message: genericMessage });
     });
   });
 
@@ -352,7 +400,9 @@ describe('AuthService', () => {
     it('returns same security message when email does not exist (PU-3)', async () => {
       repo.findByEmail.mockResolvedValue(null);
 
-      const res = await service.forgotPassword({ email: 'nonexistent@example.com' });
+      const res = await service.forgotPassword({
+        email: 'nonexistent@example.com',
+      });
 
       expect(repo.save).not.toHaveBeenCalled();
       expect(resetMail.send).not.toHaveBeenCalled();
@@ -368,7 +418,9 @@ describe('AuthService', () => {
       });
       repo.findByResetPasswordToken.mockResolvedValue(user);
 
-      await expect(service.verifyResetToken('valid-reset-token')).resolves.toBeUndefined();
+      await expect(
+        service.verifyResetToken('valid-reset-token'),
+      ).resolves.toBeUndefined();
     });
 
     it('rejects an expired token (PU-4)', async () => {
@@ -378,9 +430,9 @@ describe('AuthService', () => {
       });
       repo.findByResetPasswordToken.mockResolvedValue(user);
 
-      await expect(service.verifyResetToken('expired-reset-token')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.verifyResetToken('expired-reset-token'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rejects an invalid token', async () => {
@@ -414,7 +466,9 @@ describe('AuthService', () => {
         }),
       );
       const savedUser = repo.save.mock.calls[0][0];
-      expect(await bcrypt.compare('newPassword123', savedUser.passwordHash)).toBe(true);
+      expect(
+        await bcrypt.compare('newPassword123', savedUser.passwordHash),
+      ).toBe(true);
     });
 
     it('rejects mismatched passwords', async () => {
@@ -444,4 +498,3 @@ describe('AuthService', () => {
     });
   });
 });
-
