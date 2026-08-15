@@ -1,6 +1,35 @@
+# Base de datos efímera para los niveles de integración y aceptación.
+#
+# Por qué un servicio aparte y no reutilizar `db` de compose.override.yml:
+#   - Los tests truncan y borran datos. Compartir la DB de desarrollo significa
+#     perder el estado con el que estabas laburando.
+#   - `tmpfs` en vez de volumen: la DB vive en RAM y muere con el contenedor.
+#     No hay estado que arrastrar entre corridas, que es exactamente lo que
+#     pide un nivel de aceptación reproducible.
+#   - Puerto 5433 en el host porque el 5432 ya lo ocupa la DB de desarrollo
+#     (y en algunas máquinas del equipo, otro contenedor ajeno al proyecto).
+#
+# Uso:
+#   npm run db:test:up      # levanta y espera el healthcheck
+#   npm run test:acceptance
+#   npm run db:test:down    # -v, se lleva todo
+#
+# Las migraciones las aplica el propio AppModule al bootstrapear
+# (`migrationsRun: true`), así que no hace falta un paso previo.
 services:
-  # El 5432 del host ya lo ocupa otro contenedor tuyo (app-muni-db). El
-  # backend igual llega a esta DB por nombre de servicio ("db") dentro de la
-  # red interna de compose, así que no hace falta publicarlo al host.
-  db:
-    ports: !override []
+  db-test:
+    image: postgres:17-alpine
+    container_name: hornerito-db-test
+    environment:
+      - POSTGRES_USER=hornerito
+      - POSTGRES_PASSWORD=hornerito
+      - POSTGRES_DB=hornerito_test
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hornerito -d hornerito_test']
+      interval: 2s
+      timeout: 3s
+      retries: 15

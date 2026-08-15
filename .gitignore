@@ -3,3 +3,14 @@ dist
 .env
 *.log
 coverage
+
+# Exports de Jira normalizados por `npm run jira:import`. No se versionan:
+# son derivados de Jira (la fuente de verdad) y quedarían desactualizados al
+# día siguiente. Ver .claude/skills/jira-ticket/SKILL.md
+.jira/
+
+# Permisos personales de cada integrante. `settings.json` sí se versiona.
+.claude/settings.local.json
+
+# Cache local de los hooks (ej. check-team-skills). Es por máquina.
+.claude/.cache/
