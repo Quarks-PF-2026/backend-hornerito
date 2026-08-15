@@ -91,11 +91,56 @@ definió y el código todavía no las refleja. Detalle en `DOMAIN.md` §12 y §1
 | Traza de quién y por qué en el ajuste manual de cobertura | Hoy el ajuste se permite sin dejar rastro |
 | Donante con o sin cuenta | Hoy el código solo soporta la variante sin cuenta |
 
-## 5. Convenciones del equipo
+## 5. Puesta en marcha del workflow — PENDIENTE
+
+**El stack está instalado pero NO está operativo.** Lo que sigue es lo que falta para poder correr `/us QK-NN` de verdad. Está ordenado: primero lo que bloquea, después lo que mejora.
+
+### 5.1 Bloqueante — sin esto el ciclo no corre
+
+| # | Qué | Por qué | Cómo verificar que quedó |
+|---|---|---|---|
+| 1 | **Reiniciar la sesión de Claude Code** | Los hooks y `settings.json` se cargan al arrancar. En la sesión donde se instalaron no están activos | Pedir `npm run test:unit` sin token: tiene que bloquearse con la explicación del gate |
+| 2 | **Indexar el grafo de código** | `CLAUDE.md` §5 obliga a explorar con `codebase-memory` antes que con Read/Grep, pero el repo no está indexado. Sin esto, cada agente cae al modo caro | Al abrir sesión, el hook deja de pedir el índice. Corre una vez: `index_repository` con `mode='full'`, `persistence=true` |
+| 3 | **Exportar un CSV de Jira a `.jira/raw/`** | El importador está escrito y probado contra un CSV sintético, pero no contra el Jira real del equipo. Los headers cambian según idioma y configuración | `npm run jira:import` genera `.jira/QK-NN.md` con los criterios de aceptación **completos**, no vacíos |
+| 4 | **Confirmar el campo de criterios de aceptación** | Si el importador no lo encuentra, escribe un bloque de aviso y el ciclo se detiene en el paso 0 | Ningún ticket importado sale con "Sin criterios de aceptación en Jira" salvo que realmente no los tenga |
+
+### 5.2 Bloqueante para que ATDD sea un gate y no una convención
+
+| # | Qué | Por qué |
+|---|---|---|
+| 5 | **Correr `/us` end-to-end con una historia real** | El harness está probado (smoke verde, gate de tests verificado) pero **el ciclo completo nunca se ejecutó**. Es la única forma de saber si los nueve agentes se encadenan bien |
+| 6 | **Escribir escenarios para las historias ya implementadas** | Deuda 1. Mientras falten, el job de aceptación en CI está en `continue-on-error` y no bloquea nada |
+| 7 | **Decidir si el CI pasa a bloqueante** | Hoy informa. Sin aprobación obligatoria de PR (§4), nadie mira el resultado antes de mergear salvo el autor. Requiere marcar los checks como *required* en la configuración del repo en GitHub |
+| 8 | **Saldar los 15 errores de ESLint** | Deuda 10. Hasta entonces el job de lint tampoco bloquea |
+
+### 5.3 Bloqueante para el resto del equipo
+
+| # | Qué | Por qué |
+|---|---|---|
+| 9 | **Decidir el destino de `lab-hornerito`** | Es repo local sin remoto. Los otros 5 no lo tienen: no ven ADRs, plantillas ni catálogo, y el hook de skills les sale mudo. Decidir si va a GitHub como repo propio o como submódulo (decisión 3) |
+| 10 | **Que cada integrante instale lo del catálogo** | El hook avisa al arrancar, pero solo si tiene `lab-hornerito` clonado al lado. Depende del punto 9 |
+| 11 | **Onboarding del equipo** | `.claude/README.md` explica el stack, pero nadie lo leyó todavía. En particular hay que avisar que **no van a poder correr los tests desde el chat** y que eso es deliberado |
+
+### 5.4 Validación de lo generado — antes de usarlo en el tomo
+
+| # | Qué | Estado |
+|---|---|---|
+| 12 | **Revisar los 11 documentos marcados `[A REVISAR]`** | 3 ADRs, 5 diagramas, `convenciones.md`, `skills-catalogo.md` y este archivo. Los generó una IA y nadie los validó. **No citarlos en el tomo hasta que alguien borre el bloque de advertencia** |
+| 13 | **Responder las 8 preguntas abiertas de `DOMAIN.md` §15** | Mientras sigan abiertas, `hornerito-domain-expert` pregunta en vez de asumir, y cualquier historia que las toque se frena |
+| 14 | **Relevar con el equipo si hay más reglas acordadas sin implementar** | `DOMAIN.md` §12 tiene 6; nadie confirmó que sean todas |
+| 15 | **Escribir el ADR del patrón State para donaciones** | La decisión está tomada y documentada en `DOMAIN.md` §7, pero sin ADR. No se escribió para no sumar otro artefacto sin validar |
+
+### 5.5 Trabajo de producto que la encuesta destapó
+
+Las 7 discrepancias de `DOMAIN.md` §13 son trabajo real, no documentación. En orden de impacto sobre el modelo de datos: catálogo de insumos base global, necesidad como plantilla + publicación, donación con patrón State, traza en el ajuste manual de cobertura, imágenes en publicaciones e insumos, donante con cuenta.
+
+Ninguna se empieza sin cerrar antes su pregunta abierta correspondiente.
+
+## 6. Convenciones del equipo
 
 Las de código y trabajo están en `CLAUDE.md` §4 y §8. Las del equipo (commits, ramas, quién aprueba) en `../lab-hornerito/equipo/convenciones.md`, con lo no acordado marcado `[A DEFINIR]`.
 
-## 6. Cómo levantar el proyecto
+## 7. Cómo levantar el proyecto
 
 ```
 # Backend
@@ -115,7 +160,7 @@ npm run jira:import               # CSV en .jira/raw/ → .jira/QK-NN.md
 
 Las migraciones corren solas al bootstrapear (`migrationsRun: true`).
 
-## 7. Dónde está cada cosa
+## 8. Dónde está cada cosa
 
 | Busco | Está en |
 |---|---|
