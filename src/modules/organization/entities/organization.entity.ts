@@ -42,18 +42,6 @@ export class Organization {
   @Column({ type: 'varchar', nullable: true })
   rejectReason: string | null;
 
-  /**
-   * Copia de la URL de la imagen correspondiente en `media` (schema del
-   * tenant). Se duplica acá para que el directorio público pueda listar
-   * organizaciones sin abrir una conexión por tenant. La escribe
-   * `PublicMirrorService`.
-   */
-  @Column({ type: 'text', nullable: true })
-  logoUrl: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  coverUrl: string | null;
-
   @CreateDateColumn()
   createdAt: Date;
 

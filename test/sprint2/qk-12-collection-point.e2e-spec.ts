@@ -107,9 +107,7 @@ describe('QK-12 Administrar Punto Recolección (e2e)', () => {
     await request(app.getHttpServer())
       .put(`/collection-points/${id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send(
-        basePayload({ name: 'Depósito Editable', schedule: newSchedule }),
-      )
+      .send(basePayload({ name: 'Depósito Editable', schedule: newSchedule }))
       .expect(200);
 
     const list = await request(app.getHttpServer())
@@ -141,9 +139,9 @@ describe('QK-12 Administrar Punto Recolección (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const found = (
-      list.body as Array<{ id: string; active: boolean }>
-    ).find((p) => p.id === id);
+    const found = (list.body as Array<{ id: string; active: boolean }>).find(
+      (p) => p.id === id,
+    );
     expect(found?.active).toBe(false);
   });
 

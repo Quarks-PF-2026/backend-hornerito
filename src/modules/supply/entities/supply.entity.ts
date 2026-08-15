@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -23,9 +24,15 @@ export enum SupplyUnit {
 }
 
 @Entity('supplies')
+// Destino de la FK compuesta de `Need`: una necesidad solo puede apuntar a un
+// insumo de su misma organización.
+@Unique('UQ_supplies_org_id', ['organizationId', 'id'])
 export class Supply {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column('uuid')
+  organizationId: string;
 
   @Column()
   name: string;

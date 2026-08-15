@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
 import {
   Organization,
@@ -9,14 +10,11 @@ import {
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
 import { Supply } from '../supply/entities/supply.entity';
-import { TenantConnectionService } from '../tenant/tenant-connection.service';
 import {
   DEFAULT_PAGE_SIZE,
   ListPublicQueryDto,
   MAX_PAGE_SIZE,
 } from './dto/list-public.query.dto';
-import { PublicNeed } from './entities/public-need.entity';
-import { isNeedClosed } from './public-mirror.service';
 
 export interface Page<T> {
   items: T[];
@@ -36,14 +34,30 @@ export interface PublicOrgSummary {
   categories: string[];
 }
 
+/**
+ * Una necesidad abierta: ni cerrada a mano ni ya cubierta. Se repite en SQL
+ * porque el feed público lo resuelve la base, no el service.
+ */
+const OPEN_NEED = `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"`;
+
+/**
+ * Directorio público: es el único lugar que lee entre organizaciones. Corre
+ * como owner (sin `SET ROLE`), así que RLS no aplica; el recorte lo hace el
+ * filtro por `status = validated` de cada query.
+ */
 @Injectable()
 export class PublicService {
   constructor(
     @InjectRepository(Organization)
     private readonly organizations: Repository<Organization>,
-    @InjectRepository(PublicNeed)
-    private readonly mirrorNeeds: Repository<PublicNeed>,
-    private readonly tenantConnections: TenantConnectionService,
+    @InjectRepository(Need)
+    private readonly needs: Repository<Need>,
+    @InjectRepository(Media)
+    private readonly media: Repository<Media>,
+    @InjectRepository(CollectionPoint)
+    private readonly collectionPoints: Repository<CollectionPoint>,
+    @InjectRepository(Post)
+    private readonly posts: Repository<Post>,
   ) {}
 
   async listOrganizations(
@@ -65,10 +79,10 @@ export class PublicService {
     if (query.category) {
       base.andWhere(
         `EXISTS (
-          SELECT 1 FROM "public"."public_needs" pn
-          WHERE pn."organizationId" = o.id
-            AND pn."closed" = false
-            AND pn."supplyCategory" = :category
+          SELECT 1 FROM "needs" n
+          JOIN "supplies" s ON s.id = n."supplyId"
+          WHERE n."organizationId" = o.id AND ${OPEN_NEED}
+            AND s."category" = :category
         )`,
         { category: query.category },
       );
@@ -78,20 +92,17 @@ export class PublicService {
 
     const rows = await base
       .clone()
-      .leftJoin(
-        PublicNeed,
-        'n',
-        'n."organizationId" = o.id AND n."closed" = false',
-      )
+      .leftJoin(Need, 'n', `n."organizationId" = o.id AND ${OPEN_NEED}`)
+      .leftJoin(Supply, 's', 's.id = n."supplyId"')
       .select('o.id', 'id')
       .addSelect('o.name', 'name')
       .addSelect('o.description', 'description')
       .addSelect('o.address', 'address')
-      .addSelect('o."logoUrl"', 'logoUrl')
-      .addSelect('o."coverUrl"', 'coverUrl')
       .addSelect('COUNT(n.id)', 'openNeedsCount')
+      // `::text` no es cosmético: node-pg no sabe parsear un array de un tipo
+      // enum propio y devolvería el literal `{...}` de Postgres como string.
       .addSelect(
-        `COALESCE(ARRAY_AGG(DISTINCT n."supplyCategory") FILTER (WHERE n.id IS NOT NULL), '{}')`,
+        `COALESCE(ARRAY_AGG(DISTINCT s."category"::text) FILTER (WHERE n.id IS NOT NULL), '{}')`,
         'categories',
       )
       .groupBy('o.id')
@@ -99,13 +110,21 @@ export class PublicService {
       .addOrderBy('o.name', 'ASC')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
-      .getRawMany<PublicOrgSummary & { openNeedsCount: string }>();
+      .getRawMany<
+        Omit<PublicOrgSummary, 'openNeedsCount' | 'logoUrl' | 'coverUrl'> & {
+          openNeedsCount: string;
+        }
+      >();
+
+    const images = await this.organizationImages(rows.map((row) => row.id));
 
     return {
       items: rows.map((row) => ({
         ...row,
         openNeedsCount: Number(row.openNeedsCount),
         categories: row.categories ?? [],
+        logoUrl: images.get(row.id)?.logo ?? null,
+        coverUrl: images.get(row.id)?.cover ?? null,
       })),
       total,
       page,
@@ -113,27 +132,26 @@ export class PublicService {
     };
   }
 
-  /** Feed global de necesidades abiertas, servido desde el espejo. */
+  /** Feed global de necesidades abiertas de organizaciones validadas. */
   async listNeeds(query: ListPublicQueryDto) {
     const { page, pageSize } = paging(query);
 
-    const qb = this.mirrorNeeds
+    const qb = this.needs
       .createQueryBuilder('n')
+      .innerJoin(Supply, 's', 's.id = n."supplyId"')
       .innerJoin(
         Organization,
         'o',
         'o.id = n."organizationId" AND o.status = :status',
         { status: OrganizationStatus.VALIDATED },
       )
-      .where('n."closed" = false');
+      .where(OPEN_NEED);
 
     if (query.category) {
-      qb.andWhere('n."supplyCategory" = :category', {
-        category: query.category,
-      });
+      qb.andWhere('s."category" = :category', { category: query.category });
     }
     if (query.q) {
-      qb.andWhere('(n."supplyName" ILIKE :q OR o.name ILIKE :q)', {
+      qb.andWhere('(s."name" ILIKE :q OR o.name ILIKE :q)', {
         q: `%${query.q}%`,
       });
     }
@@ -145,21 +163,35 @@ export class PublicService {
       .select('n.id', 'id')
       .addSelect('n."organizationId"', 'organizationId')
       .addSelect('o.name', 'organizationName')
-      .addSelect('o."logoUrl"', 'organizationLogoUrl')
-      .addSelect('n."supplyName"', 'supplyName')
-      .addSelect('n."supplyCategory"', 'supplyCategory')
-      .addSelect('n."supplyUnit"', 'supplyUnit')
+      .addSelect('s."name"', 'supplyName')
+      .addSelect('s."category"', 'supplyCategory')
+      .addSelect('s."unit"', 'supplyUnit')
       .addSelect('n."requiredQuantity"', 'requiredQuantity')
       .addSelect('n."coveredQuantity"', 'coveredQuantity')
       .addSelect('n."deadline"', 'deadline')
       .orderBy('n."deadline"', 'ASC')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
-      .getRawMany();
+      .getRawMany<{
+        id: string;
+        organizationId: string;
+        organizationName: string;
+        supplyName: string;
+        supplyCategory: string;
+        supplyUnit: string;
+        requiredQuantity: string;
+        coveredQuantity: string;
+        deadline: Date | string;
+      }>();
+
+    const images = await this.organizationImages(
+      rows.map((row) => row.organizationId),
+    );
 
     return {
       items: rows.map((row) => ({
         ...row,
+        organizationLogoUrl: images.get(row.organizationId)?.logo ?? null,
         requiredQuantity: Number(row.requiredQuantity),
         coveredQuantity: Number(row.coveredQuantity),
         // `getRawMany` devuelve las columnas `date` como Date; el front espera
@@ -172,30 +204,44 @@ export class PublicService {
     };
   }
 
-  /**
-   * Detalle de una organización: los datos públicos salen de `public`, y lo del
-   * tenant se lee directo de su schema (una sola organización, sin fan-out).
-   */
+  /** Detalle de una organización validada. */
   async getOrganization(id: string) {
     const organization = await this.organizations.findOneBy({ id });
     if (!organization || organization.status !== OrganizationStatus.VALIDATED) {
       throw new NotFoundException('La organización no existe.');
     }
 
-    const dataSource = await this.tenantConnections.getDataSource(id);
-    const manager = dataSource.manager;
-
-    const [needs, supplies, points, posts] = await Promise.all([
-      manager.getRepository(Need).find(),
-      manager.getRepository(Supply).find(),
-      manager.getRepository(CollectionPoint).findBy({ active: true }),
-      manager.getRepository(Post).find({
+    const [needs, points, posts, images] = await Promise.all([
+      this.needs
+        .createQueryBuilder('n')
+        .innerJoin(Supply, 's', 's.id = n."supplyId"')
+        .where('n."organizationId" = :id', { id })
+        .andWhere(OPEN_NEED)
+        .select('n.id', 'id')
+        .addSelect('s."name"', 'supplyName')
+        .addSelect('s."category"', 'supplyCategory')
+        .addSelect('s."unit"', 'supplyUnit')
+        .addSelect('n."requiredQuantity"', 'requiredQuantity')
+        .addSelect('n."coveredQuantity"', 'coveredQuantity')
+        .addSelect('n."deadline"', 'deadline')
+        .orderBy('n."deadline"', 'ASC')
+        .getRawMany<{
+          id: string;
+          supplyName: string;
+          supplyCategory: string;
+          supplyUnit: string;
+          requiredQuantity: string;
+          coveredQuantity: string;
+          deadline: Date | string;
+        }>(),
+      this.collectionPoints.findBy({ organizationId: id, active: true }),
+      this.posts.find({
+        where: { organizationId: id },
         order: { createdAt: 'DESC' },
         take: 5,
       }),
+      this.organizationImages([id]),
     ]);
-
-    const supplyById = new Map(supplies.map((supply) => [supply.id, supply]));
 
     return {
       id: organization.id,
@@ -203,23 +249,14 @@ export class PublicService {
       description: organization.description,
       address: organization.address,
       contact: organization.contact,
-      logoUrl: organization.logoUrl,
-      coverUrl: organization.coverUrl,
-      needs: needs
-        .filter((need) => !isNeedClosed(need) && supplyById.has(need.supplyId))
-        .sort((a, b) => a.deadline.localeCompare(b.deadline))
-        .map((need) => {
-          const supply = supplyById.get(need.supplyId)!;
-          return {
-            id: need.id,
-            supplyName: supply.name,
-            supplyCategory: supply.category,
-            supplyUnit: supply.unit,
-            requiredQuantity: need.requiredQuantity,
-            coveredQuantity: need.coveredQuantity,
-            deadline: need.deadline,
-          };
-        }),
+      logoUrl: images.get(id)?.logo ?? null,
+      coverUrl: images.get(id)?.cover ?? null,
+      needs: needs.map((need) => ({
+        ...need,
+        requiredQuantity: Number(need.requiredQuantity),
+        coveredQuantity: Number(need.coveredQuantity),
+        deadline: toIsoDate(need.deadline),
+      })),
       collectionPoints: points.map((point) => ({
         id: point.id,
         name: point.name,
@@ -236,6 +273,34 @@ export class PublicService {
         createdAt: post.createdAt,
       })),
     };
+  }
+
+  /** Logo y portada de cada organización, leídos de `media`. */
+  private async organizationImages(
+    organizationIds: string[],
+  ): Promise<Map<string, { logo?: string; cover?: string }>> {
+    const images = new Map<string, { logo?: string; cover?: string }>();
+    if (organizationIds.length === 0) {
+      return images;
+    }
+
+    const rows = await this.media.find({
+      where: organizationIds.map((organizationId) => ({
+        organizationId,
+        ownerType: 'organization',
+      })),
+      select: { organizationId: true, purpose: true, url: true },
+    });
+
+    for (const row of rows) {
+      if (row.purpose !== 'logo' && row.purpose !== 'cover') {
+        continue;
+      }
+      const entry = images.get(row.organizationId) ?? {};
+      entry[row.purpose] = row.url;
+      images.set(row.organizationId, entry);
+    }
+    return images;
   }
 }
 

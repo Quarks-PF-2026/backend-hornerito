@@ -8,11 +8,15 @@ import {
 } from 'typeorm';
 
 @Entity('needs')
+@Index('IDX_needs_org_supply', ['organizationId', 'supplyId'])
+@Index('IDX_needs_org_deadline', ['organizationId', 'deadline'])
 export class Need {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Index()
+  @Column('uuid')
+  organizationId: string;
+
   @Column({ type: 'uuid' })
   supplyId: string;
 
@@ -33,4 +37,13 @@ export class Need {
 
   @UpdateDateColumn()
   updatedAt: Date;
+}
+
+/** Una necesidad cerrada no se muestra ni se puede editar. */
+export function isNeedClosed(need: {
+  closedManually: boolean;
+  coveredQuantity: number;
+  requiredQuantity: number;
+}): boolean {
+  return need.closedManually || need.coveredQuantity >= need.requiredQuantity;
 }

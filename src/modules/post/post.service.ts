@@ -10,40 +10,45 @@ export class PostService {
   constructor(private readonly tenantContext: TenantContextService) {}
 
   async listMine(): Promise<Post[]> {
-    const repo = await this.repo();
-    return repo.find({ order: { createdAt: 'DESC' } });
+    return this.repo().find({
+      where: { organizationId: this.orgId },
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async create(dto: CreatePostDto): Promise<Post> {
-    const repo = await this.repo();
-    return repo.save(repo.create(dto));
+    const repo = this.repo();
+    return repo.save(repo.create({ ...dto, organizationId: this.orgId }));
   }
 
   async update(id: string, dto: UpdatePostDto): Promise<Post> {
     const post = await this.findOrFail(id);
     post.title = dto.title;
     post.content = dto.content;
-    const repo = await this.repo();
-    return repo.save(post);
+    return this.repo().save(post);
   }
 
   async remove(id: string): Promise<void> {
     await this.findOrFail(id);
-    const repo = await this.repo();
-    await repo.delete(id);
+    await this.repo().delete({ id, organizationId: this.orgId });
   }
 
   private async findOrFail(id: string): Promise<Post> {
-    const repo = await this.repo();
-    const post = await repo.findOneBy({ id });
+    const post = await this.repo().findOneBy({
+      id,
+      organizationId: this.orgId,
+    });
     if (!post) {
       throw new NotFoundException('La publicación no existe.');
     }
     return post;
   }
 
-  private async repo(): Promise<Repository<Post>> {
-    const manager = await this.tenantContext.getManager();
-    return manager.getRepository(Post);
+  private get orgId(): string {
+    return this.tenantContext.organizationId;
+  }
+
+  private repo(): Repository<Post> {
+    return this.tenantContext.getManager().getRepository(Post);
   }
 }

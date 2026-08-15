@@ -9,7 +9,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { schemaNameFor } from '../../src/modules/tenant/tenant-schema.util';
 
 export interface Session {
   token: string;
@@ -28,9 +27,7 @@ export async function bootstrapApp(): Promise<{
   }).compile();
 
   const app = moduleFixture.createNestApplication();
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true }),
-  );
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
 
   return { app, dataSource: app.get(DataSource) };
@@ -48,6 +45,18 @@ export async function registerAndLogin(
     confirmPassword: password,
     acceptedTerms: true,
   });
+
+  // El login exige la cuenta verificada, así que recorremos el flujo real:
+  // el token solo vive en la base porque en producción viaja por correo.
+  const [{ verificationToken }] = (await app
+    .get(DataSource)
+    .query(`SELECT "verificationToken" FROM users WHERE email = $1`, [
+      email,
+    ])) as { verificationToken: string }[];
+  await request(app.getHttpServer())
+    .get('/auth/verify')
+    .query({ token: verificationToken })
+    .expect(200);
 
   const res = await request(app.getHttpServer())
     .post('/auth/login')
@@ -135,20 +144,9 @@ export async function cleanupOrganizations(
   dataSource: DataSource,
   orgIds: string[],
 ): Promise<void> {
-  for (const orgId of orgIds) {
-    await dataSource.query(
-      `DROP SCHEMA IF EXISTS "${schemaNameFor(orgId)}" CASCADE`,
-    );
-  }
   if (orgIds.length === 0) return;
-  await dataSource.query(
-    `DELETE FROM organization_invitations WHERE "organizationId" = ANY($1)`,
-    [orgIds],
-  );
-  await dataSource.query(
-    `DELETE FROM organization_memberships WHERE "organizationId" = ANY($1)`,
-    [orgIds],
-  );
+  // Todas las tablas del tenant cuelgan de `organizations` con ON DELETE
+  // CASCADE, así que borrar la organización se lleva sus datos.
   await dataSource.query(`DELETE FROM organizations WHERE id = ANY($1)`, [
     orgIds,
   ]);
@@ -159,9 +157,7 @@ export async function cleanupUsers(
   emails: string[],
 ): Promise<void> {
   if (emails.length === 0) return;
-  await dataSource.query(`DELETE FROM users WHERE email = ANY($1)`, [
-    emails,
-  ]);
+  await dataSource.query(`DELETE FROM users WHERE email = ANY($1)`, [emails]);
 }
 
 export function uniqueEmail(prefix: string): string {

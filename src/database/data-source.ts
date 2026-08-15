@@ -1,10 +1,14 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
-import { User } from '../modules/auth/entities/user.entity';
+import { CollectionPoint } from '../modules/collection-point/entities/collection-point.entity';
+import { Media } from '../modules/media/entities/media.entity';
+import { Need } from '../modules/need/entities/need.entity';
 import { Organization } from '../modules/organization/entities/organization.entity';
-import { OrganizationMembership } from '../modules/organization/entities/organization-membership.entity';
 import { OrganizationInvitation } from '../modules/organization/entities/organization-invitation.entity';
-import { PublicNeed } from '../modules/public/entities/public-need.entity';
+import { OrganizationMembership } from '../modules/organization/entities/organization-membership.entity';
+import { Post } from '../modules/post/entities/post.entity';
+import { Supply } from '../modules/supply/entities/supply.entity';
+import { User } from '../modules/auth/entities/user.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -15,7 +19,11 @@ export const AppDataSource = new DataSource({
     Organization,
     OrganizationMembership,
     OrganizationInvitation,
-    PublicNeed,
+    Supply,
+    Need,
+    Post,
+    CollectionPoint,
+    Media,
   ],
   migrations: [__dirname + '/migrations/public/*{.ts,.js}'],
   migrationsTableName: 'migrations',

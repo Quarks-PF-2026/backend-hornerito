@@ -206,7 +206,11 @@ describe('QK-13 Administrar Organización (e2e)', () => {
       .set('Authorization', `Bearer ${session.token}`)
       .expect(200);
     const own = (
-      mine.body as Array<{ id: string; status: string; rejectReason: string | null }>
+      mine.body as Array<{
+        id: string;
+        status: string;
+        rejectReason: string | null;
+      }>
     ).find((o) => o.id === orgId);
     expect(own?.status).toBe('rejected');
     expect(own?.rejectReason).toBe(reason);

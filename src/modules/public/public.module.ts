@@ -1,15 +1,24 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { Media } from '../media/entities/media.entity';
+import { Need } from '../need/entities/need.entity';
 import { Organization } from '../organization/entities/organization.entity';
-import { PublicNeed } from './entities/public-need.entity';
+import { Post } from '../post/entities/post.entity';
 import { PublicController } from './public.controller';
-import { PublicMirrorService } from './public-mirror.service';
 import { PublicService } from './public.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Organization, PublicNeed])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Organization,
+      Need,
+      Media,
+      CollectionPoint,
+      Post,
+    ]),
+  ],
   controllers: [PublicController],
-  providers: [PublicService, PublicMirrorService],
-  exports: [PublicMirrorService],
+  providers: [PublicService],
 })
 export class PublicModule {}

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPasswordResetFields1785200000000
-  implements MigrationInterface
-{
+export class AddPasswordResetFields1785200000000 implements MigrationInterface {
   name = 'AddPasswordResetFields1785200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

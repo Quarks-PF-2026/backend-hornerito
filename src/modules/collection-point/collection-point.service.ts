@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ILike, Repository } from 'typeorm';
+import { ILike, Not, Repository } from 'typeorm';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import {
   CreateCollectionPointDto,
@@ -21,15 +21,24 @@ export class CollectionPointService {
   constructor(private readonly tenantContext: TenantContextService) {}
 
   async list(): Promise<CollectionPoint[]> {
-    const repo = await this.repo();
-    return repo.find({ order: { createdAt: 'ASC' } });
+    return this.repo().find({
+      where: { organizationId: this.orgId },
+      order: { createdAt: 'ASC' },
+    });
   }
 
   async create(dto: CreateCollectionPointDto): Promise<CollectionPoint> {
-    const repo = await this.repo();
-    await this.assertNameAvailable(repo, dto.name);
+    const repo = this.repo();
+    await this.assertNameAvailable(dto.name);
     const schedule = this.normalizeSchedule(dto.schedule);
-    return repo.save(repo.create({ ...dto, schedule, active: true }));
+    return repo.save(
+      repo.create({
+        ...dto,
+        organizationId: this.orgId,
+        schedule,
+        active: true,
+      }),
+    );
   }
 
   async update(
@@ -37,8 +46,7 @@ export class CollectionPointService {
     dto: UpdateCollectionPointDto,
   ): Promise<CollectionPoint> {
     const point = await this.findOrFail(id);
-    const repo = await this.repo();
-    await this.assertNameAvailable(repo, dto.name, id);
+    await this.assertNameAvailable(dto.name, id);
     point.name = dto.name;
     point.addressLine = dto.addressLine;
     point.latitude = dto.latitude;
@@ -47,7 +55,7 @@ export class CollectionPointService {
     point.email = dto.email ?? null;
     point.contactName = dto.contactName ?? null;
     point.schedule = this.normalizeSchedule(dto.schedule);
-    return repo.save(point);
+    return this.repo().save(point);
   }
 
   /**
@@ -68,13 +76,14 @@ export class CollectionPointService {
   ): Promise<CollectionPoint> {
     const point = await this.findOrFail(id);
     point.active = active;
-    const repo = await this.repo();
-    return repo.save(point);
+    return this.repo().save(point);
   }
 
   private async findOrFail(id: string): Promise<CollectionPoint> {
-    const repo = await this.repo();
-    const point = await repo.findOneBy({ id });
+    const point = await this.repo().findOneBy({
+      id,
+      organizationId: this.orgId,
+    });
     if (!point) {
       throw new NotFoundException('El punto de recolección no existe.');
     }
@@ -82,12 +91,17 @@ export class CollectionPointService {
   }
 
   private async assertNameAvailable(
-    repo: Repository<CollectionPoint>,
     name: string,
     exceptId?: string,
   ): Promise<void> {
-    const existing = await repo.findOne({ where: { name: ILike(name) } });
-    if (existing && existing.id !== exceptId) {
+    const existing = await this.repo().findOne({
+      where: {
+        organizationId: this.orgId,
+        name: ILike(name),
+        ...(exceptId ? { id: Not(exceptId) } : {}),
+      },
+    });
+    if (existing) {
       throw new ConflictException(
         'Ya existe un punto de recolección con ese nombre.',
       );
@@ -123,8 +137,11 @@ export class CollectionPointService {
     return normalized.sort((a, b) => a.day - b.day);
   }
 
-  private async repo(): Promise<Repository<CollectionPoint>> {
-    const manager = await this.tenantContext.getManager();
-    return manager.getRepository(CollectionPoint);
+  private get orgId(): string {
+    return this.tenantContext.organizationId;
+  }
+
+  private repo(): Repository<CollectionPoint> {
+    return this.tenantContext.getManager().getRepository(CollectionPoint);
   }
 }

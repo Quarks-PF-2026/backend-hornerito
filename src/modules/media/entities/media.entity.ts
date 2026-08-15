@@ -8,18 +8,23 @@ import {
 } from 'typeorm';
 
 /**
- * Imagen asociada a algo dentro del tenant. Vive en el schema de la
- * organización, así que no necesita columna `organizationId`: el aislamiento
- * lo da el schema.
+ * Imagen asociada a algo de una organización.
  *
  * `ownerType` + `purpose` se validan contra el registro de `media-purposes.ts`;
  * no son texto libre.
  */
 @Entity('media')
-@Index(['ownerType', 'ownerId', 'purpose'], { unique: true })
+@Index(
+  'IDX_media_org_owner_purpose',
+  ['organizationId', 'ownerType', 'ownerId', 'purpose'],
+  { unique: true },
+)
 export class Media {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column('uuid')
+  organizationId: string;
 
   /** Qué tipo de cosa es dueña de la imagen. Ej: `organization`. */
   @Column()

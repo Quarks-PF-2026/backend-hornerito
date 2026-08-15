@@ -8,9 +8,7 @@ import {
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { OrganizationMembershipRole } from '../organization/entities/organization-membership.entity';
-import { PublicMirrorService } from '../public/public-mirror.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
-import { schemaNameFor } from '../tenant/tenant-schema.util';
 import { CloudinaryService } from './cloudinary.service';
 import { Media } from './entities/media.entity';
 import {
@@ -40,7 +38,6 @@ export class MediaService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly cloudinary: CloudinaryService,
-    private readonly publicMirror: PublicMirrorService,
   ) {}
 
   async listFor(
@@ -50,9 +47,8 @@ export class MediaService {
   ): Promise<Media[]> {
     const owner = this.ownerConfig(ownerType);
     await this.assertOwnerExists(owner, ownerType, ownerId, actor);
-    const repo = await this.repo();
-    return repo.find({
-      where: { ownerType, ownerId },
+    return this.repo().find({
+      where: { organizationId: this.orgId, ownerType, ownerId },
       order: { purpose: 'ASC' },
     });
   }
@@ -75,11 +71,17 @@ export class MediaService {
       transformation: config.transformation,
     });
 
-    const repo = await this.repo();
-    const existing = await repo.findOneBy({ ownerType, ownerId, purpose });
+    const repo = this.repo();
+    const existing = await repo.findOneBy({
+      organizationId: this.orgId,
+      ownerType,
+      ownerId,
+      purpose,
+    });
     const saved = await repo.save(
       repo.create({
         ...(existing ?? {}),
+        organizationId: this.orgId,
         ownerType,
         ownerId,
         purpose,
@@ -99,29 +101,18 @@ export class MediaService {
       await this.destroyQuietly(existing.publicId);
     }
 
-    if (ownerType === 'organization') {
-      await this.publicMirror.setOrganizationImage(ownerId, purpose, saved.url);
-    }
-
     return saved;
   }
 
   async remove(id: string, actor: MediaActor): Promise<void> {
-    const repo = await this.repo();
-    const media = await repo.findOneBy({ id });
+    const repo = this.repo();
+    const media = await repo.findOneBy({ id, organizationId: this.orgId });
     if (!media) {
       throw new NotFoundException('La imagen no existe.');
     }
     this.assertCanWrite(this.ownerConfig(media.ownerType), actor);
-    await repo.delete({ id });
+    await repo.delete({ id, organizationId: this.orgId });
     await this.destroyQuietly(media.publicId);
-    if (media.ownerType === 'organization') {
-      await this.publicMirror.setOrganizationImage(
-        media.ownerId,
-        media.purpose,
-        null,
-      );
-    }
   }
 
   private ownerConfig(ownerType: string): MediaOwnerConfig {
@@ -157,8 +148,8 @@ export class MediaService {
   /**
    * `entity: null` = el owner es la organización misma, y entonces el `ownerId`
    * tiene que ser el del token: nadie carga imágenes en otra organización.
-   * Si hay entidad, se busca la fila dentro del schema del tenant, con lo cual
-   * tampoco puede apuntar a algo de otra organización.
+   * Si hay entidad, se busca la fila filtrando por `organizationId`, con lo
+   * cual tampoco puede apuntar a algo de otra organización.
    */
   private async assertOwnerExists(
     owner: MediaOwnerConfig,
@@ -175,10 +166,13 @@ export class MediaService {
       return;
     }
 
-    const manager = await this.tenantContext.getManager();
-    const exists = await manager.getRepository(owner.entity).existsBy({
-      id: ownerId,
-    });
+    const exists = await this.tenantContext
+      .getManager()
+      .getRepository(owner.entity)
+      .existsBy({
+        id: ownerId,
+        organizationId: this.orgId,
+      });
     if (!exists) {
       throw new NotFoundException(`No existe el ${ownerType} indicado.`);
     }
@@ -203,10 +197,10 @@ export class MediaService {
     }
   }
 
-  /** `hornerito/<env>/org_<uuid>/<ownerType>/<ownerId>` */
+  /** `hornerito/<env>/<orgId>/<ownerType>/<ownerId>` */
   private folderFor(orgId: string, ownerType: string, ownerId: string): string {
     const env = process.env.NODE_ENV ?? 'development';
-    return `hornerito/${env}/${schemaNameFor(orgId)}/${ownerType}/${ownerId}`;
+    return `hornerito/${env}/${orgId}/${ownerType}/${ownerId}`;
   }
 
   private async destroyQuietly(publicId: string): Promise<void> {
@@ -219,8 +213,11 @@ export class MediaService {
     }
   }
 
-  private async repo(): Promise<Repository<Media>> {
-    const manager = await this.tenantContext.getManager();
-    return manager.getRepository(Media);
+  private get orgId(): string {
+    return this.tenantContext.organizationId;
+  }
+
+  private repo(): Repository<Media> {
+    return this.tenantContext.getManager().getRepository(Media);
   }
 }

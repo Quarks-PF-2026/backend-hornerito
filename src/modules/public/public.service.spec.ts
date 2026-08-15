@@ -1,24 +1,26 @@
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
 import {
   Organization,
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
-import { Supply, SupplyCategory, SupplyUnit } from '../supply/entities/supply.entity';
-import { TenantConnectionService } from '../tenant/tenant-connection.service';
-import { PublicNeed } from './entities/public-need.entity';
 import { PublicService } from './public.service';
 
-/** Query builder encadenable que registra los límites usados. */
-function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown>) {
+/** Query builder encadenable que registra los argumentos de cada método. */
+function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
   const qb: Record<string, unknown> = {};
-  const chain = (name: string) => (...args: unknown[]) => {
-    calls[name] = args;
-    return qb;
-  };
+  const chain =
+    (name: string) =>
+    (...args: unknown[]) => {
+      calls[name] = args;
+      calls[`${name}:all`] ??= [];
+      calls[`${name}:all`].push(args);
+      return qb;
+    };
   for (const method of [
     'where',
     'andWhere',
@@ -40,64 +42,65 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown>) {
   return qb;
 }
 
-function supply(id: string): Supply {
+function mediaRow(purpose: string, url: string): Media {
   return {
-    id,
-    name: 'Arroz',
-    category: SupplyCategory.ALIMENTOS_SECOS,
-    unit: SupplyUnit.KILOGRAMOS,
-    active: true,
+    id: `media-${purpose}`,
+    organizationId: 'org-1',
+    ownerType: 'organization',
+    ownerId: 'org-1',
+    purpose,
+    url,
+    publicId: `p/${purpose}`,
+    format: 'png',
+    width: 1,
+    height: 1,
+    bytes: 1,
+    createdBy: 'user-1',
     createdAt: new Date(),
     updatedAt: new Date(),
-  };
-}
-
-function need(overrides: Partial<Need>): Need {
-  return {
-    id: 'need-1',
-    supplyId: 'supply-1',
-    requiredQuantity: 10,
-    coveredQuantity: 0,
-    deadline: '2026-09-01',
-    closedManually: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
   };
 }
 
 describe('PublicService', () => {
-  const calls: Record<string, unknown> = {};
+  let calls: Record<string, unknown[]>;
+
+  beforeEach(() => {
+    calls = {};
+  });
 
   function build(options: {
     organization?: Partial<Organization> | null;
-    needs?: Need[];
     rows?: unknown[];
+    media?: Media[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
       findOneBy: () => Promise.resolve(options.organization ?? null),
     } as unknown as Repository<Organization>;
 
-    const mirrorNeeds = {
+    const needs = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
-    } as unknown as Repository<PublicNeed>;
+    } as unknown as Repository<Need>;
 
-    const manager = {
-      getRepository: (entity: unknown) => {
-        if (entity === Need) return { find: () => Promise.resolve(options.needs ?? []) };
-        if (entity === Supply) return { find: () => Promise.resolve([supply('supply-1')]) };
-        if (entity === CollectionPoint) return { findBy: () => Promise.resolve([]) };
-        if (entity === Post) return { find: () => Promise.resolve([]) };
-        throw new Error('entidad inesperada');
-      },
-    };
+    const media = {
+      find: () => Promise.resolve(options.media ?? []),
+    } as unknown as Repository<Media>;
 
-    const tenantConnections = {
-      getDataSource: () => Promise.resolve({ manager }),
-    } as unknown as TenantConnectionService;
+    const collectionPoints = {
+      findBy: () => Promise.resolve([]),
+    } as unknown as Repository<CollectionPoint>;
 
-    return new PublicService(organizations, mirrorNeeds, tenantConnections);
+    const posts = {
+      find: () => Promise.resolve([]),
+    } as unknown as Repository<Post>;
+
+    return new PublicService(
+      organizations,
+      needs,
+      media,
+      collectionPoints,
+      posts,
+    );
   }
 
   it('recorta el pageSize al máximo permitido', async () => {
@@ -125,7 +128,15 @@ describe('PublicService', () => {
     );
   });
 
-  it('en el detalle deja solo las necesidades abiertas', async () => {
+  it('el feed solo pide necesidades abiertas', async () => {
+    const service = build({ rows: [] });
+    await service.listNeeds({});
+    expect(calls.where?.[0]).toBe(
+      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+    );
+  });
+
+  it('en el detalle filtra por organización y necesidad abierta', async () => {
     const service = build({
       organization: {
         id: 'org-1',
@@ -134,19 +145,21 @@ describe('PublicService', () => {
         description: 'd',
         address: 'a',
         contact: 'c',
-        logoUrl: null,
-        coverUrl: null,
       },
-      needs: [
-        need({ id: 'abierta' }),
-        need({ id: 'cerrada-a-mano', closedManually: true }),
-        need({ id: 'cubierta', coveredQuantity: 10 }),
+      media: [
+        mediaRow('logo', 'https://cdn/logo.png'),
+        mediaRow('cover', 'https://cdn/cover.png'),
       ],
     });
 
     const detail = await service.getOrganization('org-1');
 
-    expect(detail.needs.map((item) => item.id)).toEqual(['abierta']);
-    expect(detail.needs[0].supplyName).toBe('Arroz');
+    expect(calls.where).toEqual(['n."organizationId" = :id', { id: 'org-1' }]);
+    expect(calls.andWhere?.[0]).toBe(
+      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+    );
+    // El logo y la portada ya no se copian a `organizations`: salen de `media`.
+    expect(detail.logoUrl).toBe('https://cdn/logo.png');
+    expect(detail.coverUrl).toBe('https://cdn/cover.png');
   });
 });

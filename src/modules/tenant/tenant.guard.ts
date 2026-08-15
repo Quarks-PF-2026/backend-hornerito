@@ -11,12 +11,7 @@ import {
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
 import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
-
-interface TenantGuardedRequest {
-  user?: { id?: string; orgId?: string };
-  organization?: Organization;
-  membership?: OrganizationMembership;
-}
+import type { TenantScopedRequest } from './tenant-request';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -28,7 +23,7 @@ export class TenantGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<TenantGuardedRequest>();
+    const request = context.switchToHttp().getRequest<TenantScopedRequest>();
     const orgId = request.user?.orgId;
     if (!orgId) {
       throw new ForbiddenException(

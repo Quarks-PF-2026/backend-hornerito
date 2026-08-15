@@ -16,7 +16,6 @@ import { JwtAuthGuard } from '../src/modules/auth/guards/jwt-auth.guard';
 import { OrganizationStatus } from '../src/modules/organization/entities/organization.entity';
 import { TenantGuard } from '../src/modules/tenant/tenant.guard';
 import { TenantModule } from '../src/modules/tenant/tenant.module';
-import { schemaNameFor } from '../src/modules/tenant/tenant-schema.util';
 import { cleanupUsers, registerAndLogin, uniqueEmail } from './sprint2/helpers';
 
 @Controller('tenant-probe')
@@ -54,11 +53,6 @@ describe('TenantGuard (e2e)', () => {
   });
 
   afterAll(async () => {
-    for (const orgId of createdOrgIds) {
-      await dataSource.query(
-        `DROP SCHEMA IF EXISTS "${schemaNameFor(orgId)}" CASCADE`,
-      );
-    }
     if (createdOrgIds.length > 0) {
       await dataSource.query(`DELETE FROM organizations WHERE id = ANY($1)`, [
         createdOrgIds,

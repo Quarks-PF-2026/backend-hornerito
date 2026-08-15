@@ -47,6 +47,7 @@ function makeDto(
 function makePoint(overrides: Partial<CollectionPoint> = {}): CollectionPoint {
   return {
     id: 'point-1',
+    organizationId: 'org-1',
     name: 'Sede central',
     addressLine: 'San Martín 100, Villa María',
     latitude: -32.4075,
@@ -75,7 +76,8 @@ describe('CollectionPointService', () => {
       save: jest.fn(async (entity) => entity as CollectionPoint),
     } as unknown as jest.Mocked<Repository<CollectionPoint>>;
     const tenantContext = {
-      getManager: jest.fn().mockResolvedValue({ getRepository: () => repo }),
+      organizationId: 'org-1',
+      getManager: jest.fn().mockReturnValue({ getRepository: () => repo }),
     } as unknown as jest.Mocked<TenantContextService>;
     service = new CollectionPointService(tenantContext);
   });
@@ -159,7 +161,8 @@ describe('CollectionPointService', () => {
 
     it('no toma como duplicado su propio nombre', async () => {
       repo.findOneBy.mockResolvedValue(makePoint());
-      repo.findOne.mockResolvedValue(makePoint());
+      // La búsqueda de duplicados excluye el propio id, así que no encuentra nada.
+      repo.findOne.mockResolvedValue(null);
 
       await expect(service.update('point-1', makeDto())).resolves.toBeDefined();
     });

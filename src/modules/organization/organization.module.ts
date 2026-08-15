@@ -17,7 +17,6 @@ import { ORGANIZATION_MEMBERSHIP_REPOSITORY } from './repositories/organization-
 import { TypeOrmOrganizationMembershipRepository } from './repositories/typeorm-organization-membership.repository';
 import { ORGANIZATION_INVITATION_REPOSITORY } from './repositories/organization-invitation-repository.interface';
 import { TypeOrmOrganizationInvitationRepository } from './repositories/typeorm-organization-invitation.repository';
-import { TenantProvisioningService } from './tenant/tenant-provisioning.service';
 
 @Module({
   imports: [
@@ -38,7 +37,6 @@ import { TenantProvisioningService } from './tenant/tenant-provisioning.service'
     OrganizationService,
     MemberService,
     InvitationService,
-    TenantProvisioningService,
     {
       provide: ORGANIZATION_REPOSITORY,
       useClass: TypeOrmOrganizationRepository,

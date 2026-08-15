@@ -19,7 +19,6 @@ import type { IOrganizationRepository } from './repositories/organization-reposi
 import { ORGANIZATION_REPOSITORY } from './repositories/organization-repository.interface';
 import type { IOrganizationMembershipRepository } from './repositories/organization-membership-repository.interface';
 import { ORGANIZATION_MEMBERSHIP_REPOSITORY } from './repositories/organization-membership-repository.interface';
-import { TenantProvisioningService } from './tenant/tenant-provisioning.service';
 
 @Injectable()
 export class OrganizationService {
@@ -28,7 +27,6 @@ export class OrganizationService {
     private readonly organizationRepository: IOrganizationRepository,
     @Inject(ORGANIZATION_MEMBERSHIP_REPOSITORY)
     private readonly membershipRepository: IOrganizationMembershipRepository,
-    private readonly tenantProvisioningService: TenantProvisioningService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -92,7 +90,7 @@ export class OrganizationService {
     userId: string,
     dto: UpdateOrganizationDto,
   ): Promise<Organization> {
-    const organization = await this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async (manager) => {
       const org = await manager.save(
         manager.create(Organization, {
           ownerId: userId,
@@ -114,15 +112,6 @@ export class OrganizationService {
       );
       return org;
     });
-
-    try {
-      await this.tenantProvisioningService.provision(organization.id);
-    } catch (error) {
-      await this.organizationRepository.deleteById(organization.id);
-      throw error;
-    }
-
-    return organization;
   }
 
   /** Usado por un platform admin (QK-13 CP-13-04). */

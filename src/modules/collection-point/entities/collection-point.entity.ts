@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -23,9 +24,13 @@ const decimalToNumber = {
 };
 
 @Entity('collection_points')
+@Index('IDX_collection_points_org_active', ['organizationId', 'active'])
 export class CollectionPoint {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column('uuid')
+  organizationId: string;
 
   @Column()
   name: string;

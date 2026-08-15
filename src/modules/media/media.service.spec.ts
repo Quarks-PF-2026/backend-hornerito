@@ -4,7 +4,6 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { OrganizationMembershipRole } from '../organization/entities/organization-membership.entity';
-import { PublicMirrorService } from '../public/public-mirror.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CloudinaryService } from './cloudinary.service';
 import { Media } from './entities/media.entity';
@@ -48,7 +47,7 @@ describe('MediaService', () => {
       findOneBy: jest.fn().mockResolvedValue(null),
       create: jest.fn((value: Partial<Media>) => value as Media),
       save: jest.fn((value: Media) =>
-        Promise.resolve({ id: 'media-1', ...value }),
+        Promise.resolve({ ...value, id: value.id ?? 'media-1' }),
       ),
       delete: jest.fn(),
     };
@@ -65,13 +64,13 @@ describe('MediaService', () => {
     };
 
     const tenantContext = {
-      getManager: jest.fn().mockResolvedValue({ getRepository: () => repo }),
+      organizationId: ORG_ID,
+      getManager: jest.fn().mockReturnValue({ getRepository: () => repo }),
     } as unknown as TenantContextService;
 
     service = new MediaService(
       tenantContext,
       cloudinary as unknown as CloudinaryService,
-      { setOrganizationImage: jest.fn() } as unknown as PublicMirrorService,
     );
   });
 
@@ -138,7 +137,7 @@ describe('MediaService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('sube a una carpeta propia del tenant y guarda la fila', async () => {
+  it('sube a una carpeta propia de la organización y guarda la fila', async () => {
     const saved = await service.uploadFor(
       'organization',
       ORG_ID,
@@ -151,11 +150,12 @@ describe('MediaService', () => {
       PNG,
       expect.objectContaining({
         folder: expect.stringContaining(
-          `org_${ORG_ID.replace(/-/g, '')}/organization/${ORG_ID}`,
+          `${ORG_ID}/organization/${ORG_ID}`,
         ) as string,
       }),
     );
     expect(saved.url).toBe('https://res.cloudinary.com/demo/logo-nuevo.png');
+    expect(saved.organizationId).toBe(ORG_ID);
     expect(saved.createdBy).toBe(USER_ID);
     expect(cloudinary.destroy).not.toHaveBeenCalled();
   });

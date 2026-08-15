@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
-import { PublicModule } from '../public/public.module';
+import { Supply } from './entities/supply.entity';
 import { SupplyController } from './supply.controller';
 import { SupplyService } from './supply.service';
 
 @Module({
-  imports: [AuthModule, PublicModule],
+  imports: [AuthModule, TypeOrmModule.forFeature([Supply])],
   controllers: [SupplyController],
   providers: [SupplyService],
 })
