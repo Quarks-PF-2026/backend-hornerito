@@ -1,0 +1,122 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(**)",
+      "Edit(src/**)",
+      "Edit(test/**)",
+      "Edit(scripts/**)",
+      "Edit(.claude/**)",
+      "Edit(.github/**)",
+      "Edit(*.md)",
+      "Edit(package.json)",
+      "Edit(tsconfig*.json)",
+      "Edit(nest-cli.json)",
+      "Edit(eslint.config.mjs)",
+      "Edit(compose*.yml)",
+      "Edit(Dockerfile)",
+      "Edit(.gitignore)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm run format)",
+      "Bash(npm run jira:import*)",
+      "Bash(npm run db:test:up)",
+      "Bash(npm run db:test:down)",
+      "Bash(npm run migration:generate*)",
+      "Bash(npm run migration:create*)",
+      "Bash(npm run migration:run)",
+      "Bash(HN_TEST_GATE=agent npm run test:unit)",
+      "Bash(HN_TEST_GATE=agent npm run test:integration)",
+      "Bash(HN_TEST_GATE=agent npm run test:acceptance)",
+      "Bash(HN_TEST_GATE=agent npm run test:all)",
+      "Bash(HN_TEST_GATE=reviewer npm run test:unit)",
+      "Bash(HN_TEST_GATE=reviewer npm run test:integration)",
+      "Bash(HN_TEST_GATE=reviewer npm run test:acceptance)",
+      "Bash(node scripts/*)",
+      "Bash(npx tsc --noEmit*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git add*)",
+      "Bash(git restore*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(rg*)",
+      "Bash(find*)",
+      "Bash(docker compose*)",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "ask": [
+      "Bash(npm install*)",
+      "Bash(npm uninstall*)",
+      "Bash(npm ci)",
+      "Bash(npm audit fix*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(gh pr create*)",
+      "Bash(npm run migration:revert)",
+      "Edit(DOMAIN.md)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(git filter-branch*)",
+      "Bash(rm -rf*)",
+      "Bash(npm publish*)",
+      "Edit(.env)",
+      "Edit(.env.*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/codebase-memory.mjs\"",
+            "timeout": 20,
+            "statusMessage": "Frescura del grafo de código"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-team-skills.mjs\"",
+            "timeout": 15,
+            "statusMessage": "Skills del equipo"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-tests-in-main-thread.mjs\"",
+            "timeout": 15,
+            "statusMessage": "Gate de tests (thread principal)"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/critical-zone-reminder.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Zonas críticas tocadas en la sesión"
+          }
+        ]
+      }
+    ]
+  }
+}
