@@ -69,9 +69,10 @@ npm run db:test:down   # -v, se lleva todo
 
 El flujo completo está en la skill `atdd-cycle` y se dispara con `/us QK-NN`. Lo que no es negociable:
 
+0. **Gate DoR.** Antes de arrancar cualquier otro paso, la historia traída de Jira tiene que cumplir la Definition of Ready que el equipo firmó. Si falla, el ciclo **no arranca**: se reporta qué falta y se acuerda con el equipo. Criterio verificable en `.claude/AGENTS.md` §Gates.
 1. **El escenario se escribe antes que la implementación.** Lo escribe `atdd-author`, que tiene prohibido tocar `src/`.
 2. **Gate RED.** Antes de implementar, la suite de aceptación **debe fallar**. Si pasa en verde con el código actual, el escenario no está probando nada y se rechaza — es el único control que distingue ATDD de escribir tests después.
-3. **Gate GREEN.** El agente que implementa cierra con la aceptación en verde y sin regresión en los otros dos niveles.
+3. **Gate GREEN**, que es la condición "probada" del **gate DoD** de cierre. El agente que implementa cierra con la aceptación en verde y sin regresión en los otros dos niveles, pero el DoD completo pide además implementada, integrada, documentada y **validada por el Product Owner** — esta última externa al ciclo, pendiente hasta la Sprint Review. Criterio completo en `.claude/AGENTS.md` §Gates.
 4. Un `.feature` por user story, con la clave del ticket en el nombre: `test/acceptance/QK-26.feature`.
 
 Gherkin en **español** (`# language: es`, `Característica` / `Escenario` / `Dado` / `Cuando` / `Entonces`). El `.feature` es un artefacto que alguien que no lee código tiene que poder revisar: escribilo en lenguaje de negocio, sin nombres de endpoint ni de tabla. Los detalles técnicos viven en el `.steps.ts`.
@@ -141,26 +142,26 @@ Integración `develop`, release `main`.
 
 ## 9. Tickets de Jira
 
-Los tickets entran por export CSV, no por API — así funciona para los 6 integrantes sin que nadie configure credenciales.
+El canal es el **MCP oficial de Atlassian** (`https://mcp.atlassian.com/v1/mcp/authv2`), configurado en `.mcp.json` en la raíz del backend. Cada integrante autentica por OAuth en el navegador la primera vez; no hay token que gestionar. Los permisos del MCP siguen a los del usuario autenticado — el agente solo puede lo que esa persona ya podía en Jira.
 
-```
-# el dev exporta el sprint desde Jira a .jira/raw/
-npm run jira:import          # → .jira/QK-26.md normalizado
-```
+Alcance concedido al agente: **leer la historia, cambiar su estado y asignarla a un usuario**. Nada de editar campos ni borrar.
 
-`.jira/` está en `.gitignore`: es un derivado de Jira, que es la fuente de verdad. **Leé el `.md` del ticket que estás trabajando, no el CSV crudo ni el sprint entero.**
+El canal por export CSV (`npm run jira:import`) quedó obsoleto y fue retirado del repo; la dinámica y su fundamento quedaron archivados en `../lab-hornerito/archivo/jira-csv/`. Fundamento del cambio en ADR-004.
 
-Si el ticket llega sin criterios de aceptación, el escenario no se puede derivar: no los inventes. Escalá al usuario para acordarlos. Detalle en la skill `jira-ticket`.
+**Lo que no cambia**: el agente lee la historia que está trabajando, nunca el sprint entero. Si el ticket llega sin criterios de aceptación, el escenario no se puede derivar: no los inventes. Escalá al usuario para acordarlos. Detalle en la skill `jira-ticket`.
+
+**Gates DoR y DoD** (entrada y cierre del ciclo ATDD): tabla y criterio para avanzar en `.claude/AGENTS.md` §Gates; procedimiento en la skill `atdd-cycle` y en §3 y §10 de este archivo.
 
 ---
 
 ## 10. Cierre de tarea
 
-1. El agente que implementó dejó la aceptación en verde con su token (§2).
+1. El agente que implementó dejó la aceptación en verde con su token (§2) — es la condición "probada" del gate DoD (§3, `.claude/AGENTS.md` §Gates).
 2. ¿Hubo decisión arquitectónica? → `architecture-scribe` (§7).
 3. ¿Zona crítica o lógica no trivial? → `code-reviewer`. UI de config, un `.md` o un cambio de una línea **no lo disparan**.
 4. ¿Se descubrió una convención o un anti-patrón reusable? → `docs-keeper`.
 5. Reportá qué quedó hecho y qué no. Si un test falla, decilo con el output. Si salteaste un paso, decilo.
-6. El commit lo pide el usuario (§8).
+6. Transicioná el ticket en Jira y dejá explícito que el DoD no cierra hasta que el Product Owner lo valide en la Sprint Review — esa quinta condición no la verifica el agente.
+7. El commit lo pide el usuario (§8).
 
 `CLAUDE.md` no almacena listas de tareas ni estado del proyecto — eso va en `PROYECTO.md`.

@@ -4,9 +4,9 @@ dist
 *.log
 coverage
 
-# Exports de Jira normalizados por `npm run jira:import`. No se versionan:
-# son derivados de Jira (la fuente de verdad) y quedarían desactualizados al
-# día siguiente. Ver .claude/skills/jira-ticket/SKILL.md
+# Restos del canal viejo por CSV, reemplazado por el MCP de Atlassian
+# (ADR-004). La dinámica quedó archivada en ../lab-hornerito/archivo/jira-csv/.
+# Se sigue ignorando por si alguien todavía tiene la carpeta local.
 .jira/
 
 # Permisos personales de cada integrante. `settings.json` sí se versiona.

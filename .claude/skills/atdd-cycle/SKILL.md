@@ -7,15 +7,13 @@ description: Use cuando se va a desarrollar una user story completa de Hornerito
 
 El orden importa y no es negociable: **el escenario de aceptación se escribe antes que la implementación**. Reglas de fondo en `CLAUDE.md` §3; acá está el procedimiento.
 
-## Paso 0 — Traer el ticket
+## Paso 0 — Traer el ticket y gate DoR
 
-```
-npm run jira:import
-```
+Leé la historia desde el MCP de Atlassian (`CLAUDE.md` §9, skill `jira-ticket`).
 
-Lee `.jira/QK-NN.md`. Si no existe, el dev tiene que exportar el sprint desde Jira a `.jira/raw/` primero (`CLAUDE.md` §9).
+**Gate DoR.** Antes de seguir, la historia tiene que cumplir la Definition of Ready: descripción no vacía, criterios de aceptación presentes, estimación en story points cargada, asignada al sprint activo, sin impedimentos declarados. Si falta algo, **el ciclo se detiene acá**: reportá qué falta y acordalo con el equipo. Detalle en la skill `jira-ticket` y en `.claude/AGENTS.md` §Gates.
 
-**Si el ticket no trae criterios de aceptación, el ciclo se detiene acá.** No los inventes: acordalos con el usuario y anotalos en el ticket antes de seguir. Un escenario derivado de criterios inventados valida una historia que nadie pidió.
+Si específicamente lo que falta son los criterios de aceptación, no los inventes: acordalos con el usuario y anotalos en el ticket antes de seguir. Un escenario derivado de criterios inventados valida una historia que nadie pidió.
 
 ## Paso 1 — Gate de dominio
 
@@ -52,9 +50,13 @@ El agente cierra con la aceptación en verde **y** sin regresión en unit. Si de
 
 Si no hubo decisión arquitectónica, saltealo. No todo cambio merece un ADR, y un repositorio de ADRs triviales es peor que ninguno.
 
-## Paso 5 — Review y cierre
+## Paso 5 — Review, gate DoD y cierre
 
-`code-reviewer` con `SUMMARY: ship`. Después, el commit lo pide el usuario (`CLAUDE.md` §8).
+`code-reviewer` con `SUMMARY: ship`.
+
+**Gate DoD.** El GREEN del paso 3 es la condición "probada", no el cierre — el DoD completo (`.claude/AGENTS.md` §Gates) pide además implementada, integrada y documentada, y esas tres las cierra este ciclo. La quinta condición, validada por el Product Owner, es externa: no la verifica el agente. Al cerrar, transicioná el ticket en Jira y dejá explícito que esa validación queda pendiente hasta la Sprint Review.
+
+Después, el commit lo pide el usuario (`CLAUDE.md` §8).
 
 ## Bugs
 

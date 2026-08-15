@@ -25,7 +25,7 @@ Reglas de trabajo y ruteo: `CLAUDE.md` §1. Acá va solo lo que no cabe ahí: qu
 Notación: `→` secuencial, `∥` paralelo.
 
 - **User story completa** (`/us QK-NN`):
-  `jira-import` → `hornerito-domain-expert` → `atdd-author` (deja RED) → [`tenancy-migration-expert` si toca esquema →] `nestjs-expert` (deja GREEN) → [`architecture-scribe` si hubo decisión →] `code-reviewer`
+  gate DoR (MCP de Atlassian) → `hornerito-domain-expert` → `atdd-author` (deja RED) → [`tenancy-migration-expert` si toca esquema →] `nestjs-expert` (deja GREEN, condición del gate DoD) → [`architecture-scribe` si hubo decisión →] `code-reviewer`
 
 - **Cambio que toca el contrato con el frontend**:
   `nestjs-expert` ∥ `contract-checker` (reporta qué rompe en el front) → el orquestador lleva el reporte a la sesión del frontend. El backend **no** edita el frontend.
@@ -43,9 +43,11 @@ Notación: `→` secuencial, `∥` paralelo.
 
 | Gate | Cuándo | Criterio para avanzar |
 |---|---|---|
+| **DoR** | Antes de arrancar el ciclo, sobre la historia traída de Jira | Descripción no vacía, criterios de aceptación presentes, estimación en story points cargada, asignada al sprint activo, sin impedimentos declarados. Si falla, el ciclo no arranca: se reporta qué falta y se acuerda con el equipo (CLAUDE.md §3) |
 | **Dominio** (previo) | Antes de codificar cualquier regla de negocio | `VEREDICTO: consistente`. Si `[VIOLA REGLA]` no se implementa. Si `[NO CONFIRMADO]`, se escala al usuario: el default es **preguntar, no ejecutar** |
 | **RED** | Después de escribir el escenario, antes de implementar | La suite de aceptación **falla**. Si pasa en verde, el escenario no prueba nada y se rechaza (CLAUDE.md §3) |
-| **GREEN** | Al cerrar el agente que implementó | `HN_TEST_GATE=agent npm run test:acceptance` verde y `test:unit` sin regresión. No delegable |
+| **GREEN** | Al cerrar el agente que implementó | `HN_TEST_GATE=agent npm run test:acceptance` verde y `test:unit` sin regresión. No delegable. Es la condición 3 ("probada") del gate DoD, no un cierre en paralelo |
+| **DoD** | Al cerrar la tarea | Cinco condiciones: implementada, integrada (suite completa en verde, sin regresión), probada (gate GREEN), documentada (ADR si hubo decisión arquitectónica, `DOMAIN.md` si cambió una regla) y validada por el Product Owner. Las primeras cuatro las verifica el ciclo; la quinta es externa — Liliana Costabello valida en la Sprint Review. El ciclo transiciona el ticket en Jira y deja explícito que esa quinta condición queda pendiente |
 | **Base limpia** | Toda migración | `db:test:down && db:test:up` y después integración en verde. Una migración que solo corre sobre tu base actual no está probada |
 | **Contrato** | Cambio en controllers o DTOs que el front consume | `CONTRACT REPORT` sin `[DIVERGENCE]` |
 | **Review** | Zona crítica o lógica no trivial | `SUMMARY: ship`. Un `.md`, una config de una línea o un cambio trivial **no lo disparan** |

@@ -24,7 +24,6 @@
     "test:all": "npm run test:unit && npm run test:integration && npm run test:acceptance",
     "db:test:up": "docker compose -f compose.yml -f compose.test.yml up -d db-test --wait",
     "db:test:down": "docker compose -f compose.yml -f compose.test.yml down -v",
-    "jira:import": "node scripts/jira-import.mjs",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:create": "typeorm-ts-node-commonjs migration:create",

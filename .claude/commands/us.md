@@ -10,7 +10,7 @@ Invocá la skill `atdd-cycle` y seguí sus pasos en orden, sin saltear ninguno. 
 Recordatorios que se olvidan seguido:
 
 - El **gate RED** es obligatorio aunque parezca obvio que va a fallar. Es lo único que distingue ATDD de escribir tests después.
-- Si `.jira/$1.md` no existe, corré `npm run jira:import` antes de nada.
+- Traé la historia desde el MCP de Atlassian antes de nada (`CLAUDE.md` §9). El gate DoR corre sobre lo que traiga.
 - Si el ticket llega sin criterios de aceptación, **no los inventes**: acordalos con el usuario primero.
 - Si `hornerito-domain-expert` devuelve `[NO CONFIRMADO]`, pará y preguntá. El default es preguntar, no ejecutar.
 - Si la historia toca datos de organización, tiene que haber un escenario de aislamiento entre organizaciones.

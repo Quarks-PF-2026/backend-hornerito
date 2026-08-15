@@ -101,8 +101,8 @@ definió y el código todavía no las refleja. Detalle en `DOMAIN.md` §12 y §1
 |---|---|---|---|
 | 1 | **Reiniciar la sesión de Claude Code** | Los hooks y `settings.json` se cargan al arrancar. En la sesión donde se instalaron no están activos | Pedir `npm run test:unit` sin token: tiene que bloquearse con la explicación del gate |
 | 2 | **Indexar el grafo de código** | `CLAUDE.md` §5 obliga a explorar con `codebase-memory` antes que con Read/Grep, pero el repo no está indexado. Sin esto, cada agente cae al modo caro | Al abrir sesión, el hook deja de pedir el índice. Corre una vez: `index_repository` con `mode='full'`, `persistence=true` |
-| 3 | **Exportar un CSV de Jira a `.jira/raw/`** | El importador está escrito y probado contra un CSV sintético, pero no contra el Jira real del equipo. Los headers cambian según idioma y configuración | `npm run jira:import` genera `.jira/QK-NN.md` con los criterios de aceptación **completos**, no vacíos |
-| 4 | **Confirmar el campo de criterios de aceptación** | Si el importador no lo encuentra, escribe un bloque de aviso y el ciclo se detiene en el paso 0 | Ningún ticket importado sale con "Sin criterios de aceptación en Jira" salvo que realmente no los tenga |
+| 3 | **Autenticar el MCP de Atlassian en cada máquina** | El canal pasó de export CSV a MCP (2026-08-15, ver `CLAUDE.md` §9 y ADR-004); cada integrante tiene que autenticar por OAuth la primera vez para que el agente pueda leer historias | El agente lee una historia real del board sin error de autenticación |
+| 4 | **Descubrir los nombres reales de los estados del board de Jira** | Hace falta para poder configurar a qué estado transiciona el ciclo en cada paso (gate DoD). No se puede saber hasta que el MCP esté autenticado | `[A CONFIRMAR tras autenticar el MCP]` en la skill `jira-ticket` reemplazado por los nombres reales |
 
 ### 5.2 Bloqueante para que ATDD sea un gate y no una convención
 
@@ -155,7 +155,7 @@ npm run test:acceptance
 npm run db:test:down
 
 # Tickets
-npm run jira:import               # CSV en .jira/raw/ → .jira/QK-NN.md
+# vía MCP de Atlassian, autenticado por OAuth (CLAUDE.md §9)
 ```
 
 Las migraciones corren solas al bootstrapear (`migrationsRun: true`).

@@ -11,7 +11,7 @@ Para explorar código usá el MCP `codebase-memory` primero (CLAUDE.md §5). No 
 
 ## Entrada
 
-El ticket normalizado `.jira/QK-NN.md`. Si no existe, no leas el CSV crudo ni el sprint entero: reportá que hay que correr `npm run jira:import` (CLAUDE.md §9) y frená.
+La historia del ticket, leída del MCP de Atlassian. No leas el sprint entero, solo la historia puntual (CLAUDE.md §9).
 
 Si el ticket **no trae criterios de aceptación**, no los inventes: escalá al usuario con `AskUserQuestion` proponiendo un borrador de criterios para que los confirme o corrija.
 
