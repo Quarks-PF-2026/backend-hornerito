@@ -1,7 +1,9 @@
 import {
   IsDateString,
   IsInt,
+  IsOptional,
   IsString,
+  IsUUID,
   Length,
   Max,
   Min,
@@ -27,6 +29,10 @@ export class CreateOpportunityDto {
   @IsString({ message: 'Ingresá el lugar de la actividad.' })
   @Length(3, 200, { message: 'El lugar debe tener entre 3 y 200 caracteres.' })
   location: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'Elegí un tipo de voluntario válido.' })
+  volunteerTypeId?: string | null;
 
   @IsInt({ message: 'Los cupos deben ser un número entero.' })
   @Min(1, { message: 'La actividad tiene que tener al menos un cupo.' })

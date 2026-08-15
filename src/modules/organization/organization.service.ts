@@ -14,6 +14,10 @@ import {
   OrganizationMembership,
   OrganizationMembershipRole,
 } from './entities/organization-membership.entity';
+import {
+  DEFAULT_VOLUNTEER_TYPES,
+  VolunteerType,
+} from '../volunteer-type/entities/volunteer-type.entity';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import type { IOrganizationRepository } from './repositories/organization-repository.interface';
 import { ORGANIZATION_REPOSITORY } from './repositories/organization-repository.interface';
@@ -109,6 +113,13 @@ export class OrganizationService {
           organizationId: org.id,
           role: OrganizationMembershipRole.OWNER,
         }),
+      );
+      // Catálogo inicial de tipos de voluntario (QK-33), para que el
+      // formulario de una actividad nunca arranque con el select vacío.
+      await manager.save(
+        DEFAULT_VOLUNTEER_TYPES.map((name) =>
+          manager.create(VolunteerType, { organizationId: org.id, name }),
+        ),
       );
       return org;
     });

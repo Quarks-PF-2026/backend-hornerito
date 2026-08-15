@@ -9,6 +9,7 @@ import { OrganizationMembership } from '../modules/organization/entities/organiz
 import { Post } from '../modules/post/entities/post.entity';
 import { Supply } from '../modules/supply/entities/supply.entity';
 import { User } from '../modules/auth/entities/user.entity';
+import { VolunteerType } from '../modules/volunteer-type/entities/volunteer-type.entity';
 import { VolunteerApplication } from '../modules/volunteering/entities/volunteer-application.entity';
 import { VolunteerOpportunity } from '../modules/volunteering/entities/volunteer-opportunity.entity';
 
@@ -26,6 +27,7 @@ export const AppDataSource = new DataSource({
     Post,
     CollectionPoint,
     Media,
+    VolunteerType,
     VolunteerOpportunity,
     VolunteerApplication,
   ],

@@ -36,6 +36,7 @@ function makeOpportunity(
     description: 'Servimos la merienda a 80 chicos del barrio.',
     startsAt: new Date('2026-09-12T17:00:00.000Z'),
     location: 'Bv. Sarmiento 1450, Villa María',
+    volunteerTypeId: null,
     capacity: 4,
     acceptedCount: 0,
     status: OpportunityStatus.OPEN,

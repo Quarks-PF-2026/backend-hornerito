@@ -15,6 +15,7 @@ import { PostModule } from './modules/post/post.module';
 import { PublicModule } from './modules/public/public.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
+import { VolunteerTypeModule } from './modules/volunteer-type/volunteer-type.module';
 import { VolunteeringModule } from './modules/volunteering/volunteering.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { VolunteeringModule } from './modules/volunteering/volunteering.module';
     PostModule,
     CollectionPointModule,
     DonationModule,
+    VolunteerTypeModule,
     VolunteeringModule,
     GeocodingModule,
     MediaModule,

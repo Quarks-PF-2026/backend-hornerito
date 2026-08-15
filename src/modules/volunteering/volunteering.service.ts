@@ -6,6 +6,7 @@ import {
 import { EntityManager, In, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
+import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import {
@@ -86,6 +87,7 @@ export class VolunteeringService {
 
   async create(dto: CreateOpportunityDto): Promise<VolunteerOpportunity> {
     const repo = this.opportunities();
+    const volunteerTypeId = await this.resolveVolunteerTypeId(dto);
     return repo.save(
       repo.create({
         organizationId: this.orgId,
@@ -93,6 +95,7 @@ export class VolunteeringService {
         description: dto.description,
         startsAt: new Date(dto.startsAt),
         location: dto.location,
+        volunteerTypeId,
         capacity: dto.capacity,
         acceptedCount: 0,
         status: OpportunityStatus.OPEN,
@@ -120,6 +123,7 @@ export class VolunteeringService {
     opportunity.description = dto.description;
     opportunity.startsAt = new Date(dto.startsAt);
     opportunity.location = dto.location;
+    opportunity.volunteerTypeId = await this.resolveVolunteerTypeId(dto);
     opportunity.capacity = dto.capacity;
     return this.opportunities().save(opportunity);
   }
@@ -256,6 +260,27 @@ export class VolunteeringService {
     const opportunity = await this.findOpportunityOrFail(id);
     opportunity.status = status;
     return this.opportunities().save(opportunity);
+  }
+
+  /**
+   * La FK compuesta ya impide apuntar a un tipo de otra organización, pero
+   * romperla devolvería un 500: se valida antes para responder 404.
+   */
+  private async resolveVolunteerTypeId(
+    dto: CreateOpportunityDto,
+  ): Promise<string | null> {
+    const id = dto.volunteerTypeId ?? null;
+    if (!id) {
+      return null;
+    }
+    const type = await this.tenantContext
+      .getManager()
+      .getRepository(VolunteerType)
+      .findOneBy({ id, organizationId: this.orgId });
+    if (!type) {
+      throw new NotFoundException('El tipo de voluntario no existe.');
+    }
+    return type.id;
   }
 
   private async findOpportunityOrFail(

@@ -37,6 +37,13 @@ export class VolunteerOpportunity {
   @Column()
   location: string;
 
+  /**
+   * Tipo del catálogo de la organización (QK-33). Opcional: una actividad
+   * puede publicarse sin clasificar.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  volunteerTypeId: string | null;
+
   @Column({ type: 'int' })
   capacity: number;
 
