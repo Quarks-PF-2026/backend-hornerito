@@ -17,13 +17,18 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CONTENT_WRITER_ROLES } from '../organization/entities/organization-membership.entity';
 import { TenantGuard } from '../tenant/tenant.guard';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
+import { RejectVolunteerRequestDto } from './dto/reject-volunteer-request.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
+import { VolunteerRequestService } from './volunteer-request.service';
 import { VolunteeringService } from './volunteering.service';
 
 @Controller('volunteering')
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class VolunteeringController {
-  constructor(private readonly volunteeringService: VolunteeringService) {}
+  constructor(
+    private readonly volunteeringService: VolunteeringService,
+    private readonly requestService: VolunteerRequestService,
+  ) {}
 
   /** Sin `@Roles`: cualquier miembro activo ve las oportunidades de su comedor. */
   @Get('opportunities')
@@ -84,5 +89,34 @@ export class VolunteeringController {
   @Patch('applications/:id/reject')
   reject(@Param('id', ParseUUIDPipe) id: string) {
     return this.volunteeringService.reject(id);
+  }
+
+  /**
+   * Solicitudes que llegaron desde la ficha pública (QK-16). Mismos roles que
+   * el resto del voluntariado: el coordinador es quien lo gestiona.
+   */
+  @Roles(...CONTENT_WRITER_ROLES)
+  @Get('requests')
+  listRequests() {
+    return this.requestService.list();
+  }
+
+  @Roles(...CONTENT_WRITER_ROLES)
+  @Patch('requests/:id/approve')
+  approveRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.requestService.approve(id, user.id);
+  }
+
+  @Roles(...CONTENT_WRITER_ROLES)
+  @Patch('requests/:id/reject')
+  rejectRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RejectVolunteerRequestDto,
+  ) {
+    return this.requestService.reject(id, user.id, dto.reason);
   }
 }

@@ -55,6 +55,9 @@ export class OrganizationService {
       existing.description = dto.description;
       existing.address = dto.address;
       existing.contact = dto.contact;
+      if (dto.seeksVolunteers !== undefined) {
+        existing.seeksVolunteers = dto.seeksVolunteers;
+      }
       if (existing.status === OrganizationStatus.REJECTED) {
         existing.status = OrganizationStatus.PENDING;
         existing.rejectReason = null;
@@ -102,6 +105,7 @@ export class OrganizationService {
           description: dto.description,
           address: dto.address,
           contact: dto.contact,
+          seeksVolunteers: dto.seeksVolunteers ?? false,
           // Toda organización nace pendiente de validación (default de la
           // entidad); un platform admin la valida o rechaza vía
           // `/admin/organizations` (ver AdminOrganizationService).

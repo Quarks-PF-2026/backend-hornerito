@@ -10,6 +10,8 @@ import {
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
 import { Supply } from '../supply/entities/supply.entity';
+import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
+import { VolunteerOpportunity } from '../volunteering/entities/volunteer-opportunity.entity';
 import {
   DEFAULT_PAGE_SIZE,
   ListPublicQueryDto,
@@ -41,6 +43,14 @@ export interface PublicOrgSummary {
 const OPEN_NEED = `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"`;
 
 /**
+ * El mismo criterio que `isOpportunityOpen`, pero en SQL: la ficha pública no
+ * puede ofrecer para postularse una actividad cerrada, cancelada o sin cupos.
+ * Vive acá y no duplicado en cada query para que las dos lecturas no se
+ * desincronicen.
+ */
+const OPEN_OPPORTUNITY = `o."status" = 'open' AND o."acceptedCount" < o."capacity"`;
+
+/**
  * Directorio público: es el único lugar que lee entre organizaciones. Corre
  * como owner (sin `SET ROLE`), así que RLS no aplica; el recorte lo hace el
  * filtro por `status = validated` de cada query.
@@ -58,6 +68,10 @@ export class PublicService {
     private readonly collectionPoints: Repository<CollectionPoint>,
     @InjectRepository(Post)
     private readonly posts: Repository<Post>,
+    @InjectRepository(VolunteerOpportunity)
+    private readonly opportunities: Repository<VolunteerOpportunity>,
+    @InjectRepository(VolunteerType)
+    private readonly volunteerTypes: Repository<VolunteerType>,
   ) {}
 
   async listOrganizations(
@@ -211,37 +225,79 @@ export class PublicService {
       throw new NotFoundException('La organización no existe.');
     }
 
-    const [needs, points, posts, images] = await Promise.all([
-      this.needs
-        .createQueryBuilder('n')
-        .innerJoin(Supply, 's', 's.id = n."supplyId"')
-        .where('n."organizationId" = :id', { id })
-        .andWhere(OPEN_NEED)
-        .select('n.id', 'id')
-        .addSelect('s."name"', 'supplyName')
-        .addSelect('s."category"', 'supplyCategory')
-        .addSelect('s."unit"', 'supplyUnit')
-        .addSelect('n."requiredQuantity"', 'requiredQuantity')
-        .addSelect('n."coveredQuantity"', 'coveredQuantity')
-        .addSelect('n."deadline"', 'deadline')
-        .orderBy('n."deadline"', 'ASC')
-        .getRawMany<{
-          id: string;
-          supplyName: string;
-          supplyCategory: string;
-          supplyUnit: string;
-          requiredQuantity: string;
-          coveredQuantity: string;
-          deadline: Date | string;
-        }>(),
-      this.collectionPoints.findBy({ organizationId: id, active: true }),
-      this.posts.find({
-        where: { organizationId: id },
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-      this.organizationImages([id]),
-    ]);
+    // Las lecturas de voluntariado corren después de la guarda de arriba, así
+    // que una organización pending o rejected no expone nada de esto.
+    const [needs, points, posts, images, opportunities, volunteerTypes] =
+      await Promise.all([
+        this.needs
+          .createQueryBuilder('n')
+          .innerJoin(Supply, 's', 's.id = n."supplyId"')
+          .where('n."organizationId" = :id', { id })
+          .andWhere(OPEN_NEED)
+          .select('n.id', 'id')
+          .addSelect('s."name"', 'supplyName')
+          .addSelect('s."category"', 'supplyCategory')
+          .addSelect('s."unit"', 'supplyUnit')
+          .addSelect('n."requiredQuantity"', 'requiredQuantity')
+          .addSelect('n."coveredQuantity"', 'coveredQuantity')
+          .addSelect('n."deadline"', 'deadline')
+          .orderBy('n."deadline"', 'ASC')
+          .getRawMany<{
+            id: string;
+            supplyName: string;
+            supplyCategory: string;
+            supplyUnit: string;
+            requiredQuantity: string;
+            coveredQuantity: string;
+            deadline: Date | string;
+          }>(),
+        this.collectionPoints.findBy({ organizationId: id, active: true }),
+        this.posts.find({
+          where: { organizationId: id },
+          order: { createdAt: 'DESC' },
+          take: 5,
+        }),
+        this.organizationImages([id]),
+        organization.seeksVolunteers
+          ? this.opportunities
+              .createQueryBuilder('o')
+              .leftJoin(
+                VolunteerType,
+                't',
+                't.id = o."volunteerTypeId" AND t."organizationId" = o."organizationId"',
+              )
+              .where('o."organizationId" = :id', { id })
+              .andWhere(OPEN_OPPORTUNITY)
+              .select('o.id', 'id')
+              .addSelect('o."title"', 'title')
+              .addSelect('o."description"', 'description')
+              .addSelect('o."startsAt"', 'startsAt')
+              .addSelect('o."location"', 'location')
+              .addSelect('o."capacity"', 'capacity')
+              .addSelect('o."acceptedCount"', 'acceptedCount')
+              .addSelect('o."volunteerTypeId"', 'volunteerTypeId')
+              .addSelect('t."name"', 'volunteerTypeName')
+              .orderBy('o."startsAt"', 'ASC')
+              .getRawMany<{
+                id: string;
+                title: string;
+                description: string;
+                startsAt: Date;
+                location: string;
+                capacity: string;
+                acceptedCount: string;
+                volunteerTypeId: string | null;
+                volunteerTypeName: string | null;
+              }>()
+          : Promise.resolve([]),
+        organization.seeksVolunteers
+          ? this.volunteerTypes.find({
+              where: { organizationId: id, active: true },
+              select: { id: true, name: true },
+              order: { name: 'ASC' },
+            })
+          : Promise.resolve([]),
+      ]);
 
     return {
       id: organization.id,
@@ -272,6 +328,18 @@ export class PublicService {
         content: post.content,
         createdAt: post.createdAt,
       })),
+      volunteering: {
+        seeksVolunteers: organization.seeksVolunteers,
+        types: volunteerTypes.map((type) => ({
+          id: type.id,
+          name: type.name,
+        })),
+        opportunities: opportunities.map((opportunity) => ({
+          ...opportunity,
+          capacity: Number(opportunity.capacity),
+          acceptedCount: Number(opportunity.acceptedCount),
+        })),
+      },
     };
   }
 

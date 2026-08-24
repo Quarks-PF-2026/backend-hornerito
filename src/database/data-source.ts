@@ -12,6 +12,7 @@ import { User } from '../modules/auth/entities/user.entity';
 import { VolunteerType } from '../modules/volunteer-type/entities/volunteer-type.entity';
 import { VolunteerApplication } from '../modules/volunteering/entities/volunteer-application.entity';
 import { VolunteerOpportunity } from '../modules/volunteering/entities/volunteer-opportunity.entity';
+import { VolunteerRequest } from '../modules/volunteering/entities/volunteer-request.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -30,6 +31,7 @@ export const AppDataSource = new DataSource({
     VolunteerType,
     VolunteerOpportunity,
     VolunteerApplication,
+    VolunteerRequest,
   ],
   migrations: [__dirname + '/migrations/public/*{.ts,.js}'],
   migrationsTableName: 'migrations',

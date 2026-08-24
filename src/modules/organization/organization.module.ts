@@ -50,5 +50,7 @@ import { TypeOrmOrganizationInvitationRepository } from './repositories/typeorm-
       useClass: TypeOrmOrganizationInvitationRepository,
     },
   ],
+  // Lo consume VolunteeringModule al aprobar una solicitud de voluntario.
+  exports: [MemberService],
 })
 export class OrganizationModule {}

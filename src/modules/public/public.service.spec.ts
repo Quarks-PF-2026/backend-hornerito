@@ -8,6 +8,8 @@ import {
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
+import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
+import { VolunteerOpportunity } from '../volunteering/entities/volunteer-opportunity.entity';
 import { PublicService } from './public.service';
 
 /** Query builder encadenable que registra los argumentos de cada método. */
@@ -94,12 +96,22 @@ describe('PublicService', () => {
       find: () => Promise.resolve([]),
     } as unknown as Repository<Post>;
 
+    const opportunities = {
+      createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
+    } as unknown as Repository<VolunteerOpportunity>;
+
+    const volunteerTypes = {
+      find: () => Promise.resolve([]),
+    } as unknown as Repository<VolunteerType>;
+
     return new PublicService(
       organizations,
       needs,
       media,
       collectionPoints,
       posts,
+      opportunities,
+      volunteerTypes,
     );
   }
 

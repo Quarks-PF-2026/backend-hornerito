@@ -42,6 +42,10 @@ export class Organization {
   @Column({ type: 'varchar', nullable: true })
   rejectReason: string | null;
 
+  /** Prende la sección "Sumate como voluntario" en la ficha pública (QK-16). */
+  @Column({ default: false })
+  seeksVolunteers: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 
