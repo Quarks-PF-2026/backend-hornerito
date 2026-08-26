@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks are safe to reference unbound */
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { Supply, SupplyCategory, SupplyUnit } from '../supply/entities/supply.entity';
+import {
+  Supply,
+  SupplyCategory,
+  SupplyUnit,
+} from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { Need } from './entities/need.entity';
 import { NeedService } from './need.service';
@@ -9,6 +13,7 @@ import { NeedService } from './need.service';
 function makeNeed(overrides: Partial<Need> = {}): Need {
   return {
     id: 'need-1',
+    organizationId: 'org-1',
     supplyId: 'supply-1',
     requiredQuantity: 50,
     coveredQuantity: 0,
@@ -23,6 +28,7 @@ function makeNeed(overrides: Partial<Need> = {}): Need {
 function makeSupply(overrides: Partial<Supply> = {}): Supply {
   return {
     id: 'supply-1',
+    organizationId: 'org-1',
     name: 'Arroz',
     category: SupplyCategory.ALIMENTOS_SECOS,
     unit: SupplyUnit.KILOGRAMOS,
@@ -50,7 +56,8 @@ describe('NeedService', () => {
       findOneBy: jest.fn(),
     } as unknown as jest.Mocked<Repository<Supply>>;
     tenantContext = {
-      getManager: jest.fn().mockResolvedValue({
+      organizationId: 'org-1',
+      getManager: jest.fn().mockReturnValue({
         getRepository: (entity: unknown) =>
           entity === Supply ? supplyRepo : needRepo,
       }),
@@ -59,7 +66,7 @@ describe('NeedService', () => {
   });
 
   describe('listMine', () => {
-    it('returns every need in the tenant schema', async () => {
+    it('returns every need of the organization', async () => {
       const needs = [makeNeed(), makeNeed({ id: 'need-2' })];
       needRepo.find.mockResolvedValue(needs);
 
@@ -70,17 +77,30 @@ describe('NeedService', () => {
   describe('create', () => {
     it('creates a need when the supply exists', async () => {
       supplyRepo.findOneBy.mockResolvedValue(makeSupply());
-      const dto = { supplyId: 'supply-1', requiredQuantity: 50, deadline: '2026-08-01' };
+      const dto = {
+        supplyId: 'supply-1',
+        requiredQuantity: 50,
+        deadline: '2026-08-01',
+      };
 
       const result = await service.create(dto);
 
-      expect(result).toEqual({ ...dto, coveredQuantity: 0, closedManually: false });
+      expect(result).toEqual({
+        ...dto,
+        organizationId: 'org-1',
+        coveredQuantity: 0,
+        closedManually: false,
+      });
       expect(needRepo.save).toHaveBeenCalled();
     });
 
     it('throws NotFoundException when the supply does not exist', async () => {
       supplyRepo.findOneBy.mockResolvedValue(null);
-      const dto = { supplyId: 'missing', requiredQuantity: 50, deadline: '2026-08-01' };
+      const dto = {
+        supplyId: 'missing',
+        requiredQuantity: 50,
+        deadline: '2026-08-01',
+      };
 
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
       expect(needRepo.save).not.toHaveBeenCalled();
@@ -146,7 +166,9 @@ describe('NeedService', () => {
     it('sets the covered quantity', async () => {
       needRepo.findOneBy.mockResolvedValue(makeNeed());
 
-      const result = await service.updateProgress('need-1', { coveredQuantity: 30 });
+      const result = await service.updateProgress('need-1', {
+        coveredQuantity: 30,
+      });
 
       expect(result.coveredQuantity).toBe(30);
     });
@@ -154,7 +176,9 @@ describe('NeedService', () => {
     it('allows progress that completes the need', async () => {
       needRepo.findOneBy.mockResolvedValue(makeNeed({ requiredQuantity: 50 }));
 
-      const result = await service.updateProgress('need-1', { coveredQuantity: 50 });
+      const result = await service.updateProgress('need-1', {
+        coveredQuantity: 50,
+      });
 
       expect(result.coveredQuantity).toBe(50);
     });
@@ -202,7 +226,9 @@ describe('NeedService', () => {
     it('throws NotFoundException when the need does not exist', async () => {
       needRepo.findOneBy.mockResolvedValue(null);
 
-      await expect(service.close('missing-id')).rejects.toThrow(NotFoundException);
+      await expect(service.close('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

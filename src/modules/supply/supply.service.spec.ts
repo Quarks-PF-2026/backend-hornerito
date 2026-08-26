@@ -8,6 +8,7 @@ import { SupplyService } from './supply.service';
 function makeSupply(overrides: Partial<Supply> = {}): Supply {
   return {
     id: 'supply-1',
+    organizationId: 'org-1',
     name: 'Arroz',
     category: SupplyCategory.ALIMENTOS_SECOS,
     unit: SupplyUnit.KILOGRAMOS,
@@ -32,16 +33,18 @@ describe('SupplyService', () => {
       save: jest.fn(async (entity) => entity as Supply),
     } as unknown as jest.Mocked<Repository<Supply>>;
     tenantContext = {
-      getManager: jest
-        .fn()
-        .mockResolvedValue({ getRepository: () => repo }),
+      organizationId: 'org-1',
+      getManager: jest.fn().mockReturnValue({ getRepository: () => repo }),
     } as unknown as jest.Mocked<TenantContextService>;
     service = new SupplyService(tenantContext);
   });
 
   describe('listMine', () => {
-    it('returns every supply in the tenant schema', async () => {
-      const supplies = [makeSupply(), makeSupply({ id: 'supply-2', active: false })];
+    it('returns every supply of the organization', async () => {
+      const supplies = [
+        makeSupply(),
+        makeSupply({ id: 'supply-2', active: false }),
+      ];
       repo.find.mockResolvedValue(supplies);
 
       await expect(service.listMine()).resolves.toEqual(supplies);
@@ -51,17 +54,25 @@ describe('SupplyService', () => {
   describe('create', () => {
     it('creates a supply when the name is available', async () => {
       repo.findOne.mockResolvedValue(null);
-      const dto = { name: 'Leche', category: SupplyCategory.FRESCOS, unit: SupplyUnit.LITROS };
+      const dto = {
+        name: 'Leche',
+        category: SupplyCategory.FRESCOS,
+        unit: SupplyUnit.LITROS,
+      };
 
       const result = await service.create(dto);
 
-      expect(result).toEqual({ ...dto, active: true });
+      expect(result).toEqual({ ...dto, organizationId: 'org-1', active: true });
       expect(repo.save).toHaveBeenCalled();
     });
 
     it('rejects a duplicate name (case-insensitive)', async () => {
       repo.findOne.mockResolvedValue(makeSupply({ name: 'arroz' }));
-      const dto = { name: 'Arroz', category: SupplyCategory.ALIMENTOS_SECOS, unit: SupplyUnit.KILOGRAMOS };
+      const dto = {
+        name: 'Arroz',
+        category: SupplyCategory.ALIMENTOS_SECOS,
+        unit: SupplyUnit.KILOGRAMOS,
+      };
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
       expect(repo.save).not.toHaveBeenCalled();
@@ -84,7 +95,8 @@ describe('SupplyService', () => {
     it('allows saving with its own unchanged name', async () => {
       const existing = makeSupply();
       repo.findOneBy.mockResolvedValue(existing);
-      repo.findOne.mockResolvedValue(existing);
+      // La búsqueda de duplicados excluye el propio id, así que no encuentra nada.
+      repo.findOne.mockResolvedValue(null);
 
       const result = await service.update('supply-1', {
         name: 'Arroz',
@@ -99,7 +111,9 @@ describe('SupplyService', () => {
     it('rejects renaming to a name already used by another supply', async () => {
       const existing = makeSupply();
       repo.findOneBy.mockResolvedValue(existing);
-      repo.findOne.mockResolvedValue(makeSupply({ id: 'supply-2', name: 'Leche' }));
+      repo.findOne.mockResolvedValue(
+        makeSupply({ id: 'supply-2', name: 'Leche' }),
+      );
 
       await expect(
         service.update('supply-1', {
@@ -131,7 +145,9 @@ describe('SupplyService', () => {
     it('throws NotFoundException when the supply does not exist', async () => {
       repo.findOneBy.mockResolvedValue(null);
 
-      await expect(service.toggle('missing-id')).rejects.toThrow(NotFoundException);
+      await expect(service.toggle('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

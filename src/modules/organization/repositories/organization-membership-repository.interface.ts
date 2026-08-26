@@ -10,4 +10,11 @@ export interface IOrganizationMembershipRepository {
     userId: string,
     organizationId: string,
   ): Promise<OrganizationMembership | null>;
+  findByOrganizationId(
+    organizationId: string,
+  ): Promise<OrganizationMembership[]>;
+  create(
+    membership: Partial<OrganizationMembership>,
+  ): Promise<OrganizationMembership>;
+  save(membership: OrganizationMembership): Promise<OrganizationMembership>;
 }

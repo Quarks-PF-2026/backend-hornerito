@@ -1,13 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { MailService } from '../../mail/mail.service';
+import { verificationMail } from '../../mail/templates';
 
-// Stub: loguea el link de verificación en vez de enviar un email real.
-// Reemplazar por una implementación con Nodemailer/SendGrid sin tocar AuthService.
 @Injectable()
 export class VerificationMailService {
-  private readonly logger = new Logger(VerificationMailService.name);
+  constructor(
+    private readonly mail: MailService,
+    private readonly config: ConfigService,
+  ) {}
 
   send(email: string, token: string): Promise<void> {
-    this.logger.log(`Verification email for ${email}: token=${token}`);
-    return Promise.resolve();
+    const baseUrl = this.config.get<string>(
+      'APP_BASE_URL',
+      'http://localhost:4200',
+    );
+    const url = `${baseUrl}/verify?token=${token}`;
+    return this.mail.send(verificationMail(email, url));
   }
 }

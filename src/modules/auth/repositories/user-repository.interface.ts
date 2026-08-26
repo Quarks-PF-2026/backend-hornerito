@@ -7,8 +7,10 @@ export const USER_REPOSITORY = Symbol('USER_REPOSITORY');
 // inyectada vía el token de arriba.
 export interface IUserRepository {
   findById(id: string): Promise<User | null>;
+  findByIds(ids: string[]): Promise<User[]>;
   findByEmail(email: string): Promise<User | null>;
   findByVerificationToken(token: string): Promise<User | null>;
+  findByResetPasswordToken(token: string): Promise<User | null>;
   create(user: Partial<User>): Promise<User>;
   save(user: User): Promise<User>;
 }

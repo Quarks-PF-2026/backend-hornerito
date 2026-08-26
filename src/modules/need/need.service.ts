@@ -1,26 +1,34 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateNeedDto } from './dto/create-need.dto';
 import { UpdateNeedDto } from './dto/update-need.dto';
 import { UpdateProgressDto } from './dto/update-progress.dto';
-import { Need } from './entities/need.entity';
+import { Need, isNeedClosed } from './entities/need.entity';
 
 @Injectable()
 export class NeedService {
   constructor(private readonly tenantContext: TenantContextService) {}
 
   async listMine(): Promise<Need[]> {
-    const repo = await this.repo();
-    return repo.find();
+    return this.repo().find({ where: { organizationId: this.orgId } });
   }
 
   async create(dto: CreateNeedDto): Promise<Need> {
-    const repo = await this.repo();
+    const repo = this.repo();
     await this.assertSupplyExists(dto.supplyId);
     return repo.save(
-      repo.create({ ...dto, coveredQuantity: 0, closedManually: false }),
+      repo.create({
+        ...dto,
+        organizationId: this.orgId,
+        coveredQuantity: 0,
+        closedManually: false,
+      }),
     );
   }
 
@@ -30,50 +38,51 @@ export class NeedService {
     need.supplyId = dto.supplyId;
     need.requiredQuantity = dto.requiredQuantity;
     need.deadline = dto.deadline;
-    const repo = await this.repo();
-    return repo.save(need);
+    return this.repo().save(need);
   }
 
   async updateProgress(id: string, dto: UpdateProgressDto): Promise<Need> {
     const need = await this.findOpenOrFail(id);
     need.coveredQuantity = dto.coveredQuantity;
-    const repo = await this.repo();
-    return repo.save(need);
+    return this.repo().save(need);
   }
 
   async close(id: string): Promise<Need> {
     const need = await this.findOpenOrFail(id);
     need.closedManually = true;
-    const repo = await this.repo();
-    return repo.save(need);
+    return this.repo().save(need);
   }
 
   private async findOpenOrFail(id: string): Promise<Need> {
-    const repo = await this.repo();
-    const need = await repo.findOneBy({ id });
+    const need = await this.repo().findOneBy({
+      id,
+      organizationId: this.orgId,
+    });
     if (!need) {
       throw new NotFoundException('La necesidad no existe.');
     }
-    if (this.isClosed(need)) {
+    if (isNeedClosed(need)) {
       throw new ConflictException('La necesidad ya está cerrada.');
     }
     return need;
   }
 
-  private isClosed(need: Need): boolean {
-    return need.closedManually || need.coveredQuantity >= need.requiredQuantity;
-  }
-
-  private async assertSupplyExists(supplyId: string): Promise<void> {
-    const manager = await this.tenantContext.getManager();
-    const supply = await manager.getRepository(Supply).findOneBy({ id: supplyId });
+  private async assertSupplyExists(supplyId: string): Promise<Supply> {
+    const supply = await this.tenantContext
+      .getManager()
+      .getRepository(Supply)
+      .findOneBy({ id: supplyId, organizationId: this.orgId });
     if (!supply) {
       throw new NotFoundException('El insumo indicado no existe.');
     }
+    return supply;
   }
 
-  private async repo(): Promise<Repository<Need>> {
-    const manager = await this.tenantContext.getManager();
-    return manager.getRepository(Need);
+  private get orgId(): string {
+    return this.tenantContext.organizationId;
+  }
+
+  private repo(): Repository<Need> {
+    return this.tenantContext.getManager().getRepository(Need);
   }
 }

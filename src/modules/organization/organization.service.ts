@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -9,12 +14,15 @@ import {
   OrganizationMembership,
   OrganizationMembershipRole,
 } from './entities/organization-membership.entity';
+import {
+  DEFAULT_VOLUNTEER_TYPES,
+  VolunteerType,
+} from '../volunteer-type/entities/volunteer-type.entity';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import type { IOrganizationRepository } from './repositories/organization-repository.interface';
 import { ORGANIZATION_REPOSITORY } from './repositories/organization-repository.interface';
 import type { IOrganizationMembershipRepository } from './repositories/organization-membership-repository.interface';
 import { ORGANIZATION_MEMBERSHIP_REPOSITORY } from './repositories/organization-membership-repository.interface';
-import { TenantProvisioningService } from './tenant/tenant-provisioning.service';
 
 @Injectable()
 export class OrganizationService {
@@ -23,7 +31,6 @@ export class OrganizationService {
     private readonly organizationRepository: IOrganizationRepository,
     @Inject(ORGANIZATION_MEMBERSHIP_REPOSITORY)
     private readonly membershipRepository: IOrganizationMembershipRepository,
-    private readonly tenantProvisioningService: TenantProvisioningService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -48,11 +55,23 @@ export class OrganizationService {
       existing.description = dto.description;
       existing.address = dto.address;
       existing.contact = dto.contact;
+      if (dto.seeksVolunteers !== undefined) {
+        existing.seeksVolunteers = dto.seeksVolunteers;
+      }
       if (existing.status === OrganizationStatus.REJECTED) {
         existing.status = OrganizationStatus.PENDING;
         existing.rejectReason = null;
       }
       return this.organizationRepository.save(existing);
+    }
+
+    // Un miembro que no es dueño no edita el perfil ni se crea una organización
+    // propia por accidente al llamar a este endpoint.
+    const memberships = await this.membershipRepository.findByUserId(userId);
+    if (memberships.length > 0) {
+      throw new ForbiddenException(
+        'Solo el dueño puede editar los datos de la organización.',
+      );
     }
 
     return this.createMine(userId, dto);
@@ -78,7 +97,7 @@ export class OrganizationService {
     userId: string,
     dto: UpdateOrganizationDto,
   ): Promise<Organization> {
-    const organization = await this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async (manager) => {
       const org = await manager.save(
         manager.create(Organization, {
           ownerId: userId,
@@ -86,11 +105,10 @@ export class OrganizationService {
           description: dto.description,
           address: dto.address,
           contact: dto.contact,
-          // HACK temporal: sin flujo de validación de admin todavía, toda
-          // organización nueva nace validada para no bloquear el resto de
-          // los módulos (insumos, necesidades, etc). Sacar cuando exista
-          // un endpoint real de validación.
-          status: OrganizationStatus.VALIDATED,
+          seeksVolunteers: dto.seeksVolunteers ?? false,
+          // Toda organización nace pendiente de validación (default de la
+          // entidad); un platform admin la valida o rechaza vía
+          // `/admin/organizations` (ver AdminOrganizationService).
         }),
       );
       await manager.save(
@@ -100,16 +118,38 @@ export class OrganizationService {
           role: OrganizationMembershipRole.OWNER,
         }),
       );
+      // Catálogo inicial de tipos de voluntario (QK-33), para que el
+      // formulario de una actividad nunca arranque con el select vacío.
+      await manager.save(
+        DEFAULT_VOLUNTEER_TYPES.map((name) =>
+          manager.create(VolunteerType, { organizationId: org.id, name }),
+        ),
+      );
       return org;
     });
+  }
 
-    try {
-      await this.tenantProvisioningService.provision(organization.id);
-    } catch (error) {
-      await this.organizationRepository.deleteById(organization.id);
-      throw error;
+  /** Usado por un platform admin (QK-13 CP-13-04). */
+  async validate(organizationId: string): Promise<Organization> {
+    const organization = await this.requireOrganization(organizationId);
+    organization.status = OrganizationStatus.VALIDATED;
+    organization.rejectReason = null;
+    return this.organizationRepository.save(organization);
+  }
+
+  /** Usado por un platform admin (QK-13 CP-13-05). */
+  async reject(organizationId: string, reason: string): Promise<Organization> {
+    const organization = await this.requireOrganization(organizationId);
+    organization.status = OrganizationStatus.REJECTED;
+    organization.rejectReason = reason;
+    return this.organizationRepository.save(organization);
+  }
+
+  private async requireOrganization(id: string): Promise<Organization> {
+    const organization = await this.organizationRepository.findById(id);
+    if (!organization) {
+      throw new NotFoundException('La organización no existe.');
     }
-
     return organization;
   }
 }

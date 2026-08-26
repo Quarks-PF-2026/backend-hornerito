@@ -8,6 +8,7 @@ import { PostService } from './post.service';
 function makePost(overrides: Partial<Post> = {}): Post {
   return {
     id: 'post-1',
+    organizationId: 'org-1',
     title: 'Gracias por las donaciones',
     content: 'Seguimos necesitando leche y aceite.',
     createdAt: new Date(),
@@ -30,7 +31,8 @@ describe('PostService', () => {
       delete: jest.fn(),
     } as unknown as jest.Mocked<Repository<Post>>;
     tenantContext = {
-      getManager: jest.fn().mockResolvedValue({
+      organizationId: 'org-1',
+      getManager: jest.fn().mockReturnValue({
         getRepository: () => postRepo,
       }),
     } as unknown as jest.Mocked<TenantContextService>;
@@ -38,7 +40,7 @@ describe('PostService', () => {
   });
 
   describe('listMine', () => {
-    it('returns every post in the tenant schema, newest first', async () => {
+    it('returns every post of the organization, newest first', async () => {
       const posts = [makePost(), makePost({ id: 'post-2' })];
       postRepo.find.mockResolvedValue(posts);
 
@@ -46,6 +48,7 @@ describe('PostService', () => {
 
       expect(result).toEqual(posts);
       expect(postRepo.find).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1' },
         order: { createdAt: 'DESC' },
       });
     });
@@ -57,7 +60,7 @@ describe('PostService', () => {
 
       const result = await service.create(dto);
 
-      expect(result).toEqual(dto);
+      expect(result).toEqual({ ...dto, organizationId: 'org-1' });
       expect(postRepo.save).toHaveBeenCalled();
     });
   });
@@ -99,7 +102,10 @@ describe('PostService', () => {
 
       await service.remove('post-1');
 
-      expect(postRepo.delete).toHaveBeenCalledWith('post-1');
+      expect(postRepo.delete).toHaveBeenCalledWith({
+        id: 'post-1',
+        organizationId: 'org-1',
+      });
     });
   });
 });

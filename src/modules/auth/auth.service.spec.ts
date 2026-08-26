@@ -10,8 +10,12 @@ import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
 import { User } from './entities/user.entity';
-import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
+import {
+  OrganizationMembership,
+  OrganizationMembershipRole,
+} from '../organization/entities/organization-membership.entity';
 import { IUserRepository } from './repositories/user-repository.interface';
+import { PasswordResetMailService } from './mail/password-reset-mail.service';
 import { VerificationMailService } from './mail/verification-mail.service';
 
 function makeUser(overrides: Partial<User> = {}): User {
@@ -21,8 +25,11 @@ function makeUser(overrides: Partial<User> = {}): User {
     email: 'maria@example.com',
     passwordHash: 'hashed',
     emailVerified: false,
+    isPlatformAdmin: false,
     verificationToken: 'valid-token',
     verificationTokenExpiresAt: new Date(Date.now() + 60_000),
+    resetPasswordToken: null,
+    resetPasswordTokenExpiresAt: null,
     termsAcceptedAt: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -35,13 +42,16 @@ describe('AuthService', () => {
   let repo: jest.Mocked<IUserRepository>;
   let membershipRepo: jest.Mocked<Repository<OrganizationMembership>>;
   let mail: jest.Mocked<VerificationMailService>;
+  let resetMail: jest.Mocked<PasswordResetMailService>;
   let jwt: jest.Mocked<JwtService>;
 
   beforeEach(() => {
     repo = {
       findById: jest.fn(),
+      findByIds: jest.fn().mockResolvedValue([]),
       findByEmail: jest.fn(),
       findByVerificationToken: jest.fn(),
+      findByResetPasswordToken: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
     };
@@ -52,10 +62,13 @@ describe('AuthService', () => {
     mail = {
       send: jest.fn(),
     } as unknown as jest.Mocked<VerificationMailService>;
+    resetMail = {
+      send: jest.fn(),
+    } as unknown as jest.Mocked<PasswordResetMailService>;
     jwt = {
       sign: jest.fn().mockReturnValue('signed-jwt'),
     } as unknown as jest.Mocked<JwtService>;
-    service = new AuthService(repo, membershipRepo, mail, jwt);
+    service = new AuthService(repo, membershipRepo, mail, resetMail, jwt);
   });
 
   describe('register', () => {
@@ -80,8 +93,7 @@ describe('AuthService', () => {
       expect(
         await bcrypt.compare(validDto.password, created.passwordHash!),
       ).toBe(true);
-      // TODO: volver a false cuando el envío real de email esté cableado.
-      expect(created.emailVerified).toBe(true);
+      expect(created.emailVerified).toBe(false);
       expect(created.verificationToken).toBeTruthy();
       expect(mail.send).toHaveBeenCalledWith(
         validDto.email,
@@ -144,6 +156,55 @@ describe('AuthService', () => {
     });
   });
 
+  describe('resendVerification', () => {
+    const genericMessage =
+      'Si el correo está registrado y sin verificar, te enviamos un nuevo enlace.';
+
+    it('issues a fresh token and resends the email to an unverified account', async () => {
+      const user = makeUser({ verificationToken: 'old-token' });
+      repo.findByEmail.mockResolvedValue(user);
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+
+      const result = await service.resendVerification({
+        email: user.email,
+      });
+
+      expect(user.verificationToken).not.toBe('old-token');
+      expect(user.verificationTokenExpiresAt!.getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+      expect(repo.save).toHaveBeenCalledWith(user);
+      expect(mail.send).toHaveBeenCalledWith(
+        user.email,
+        user.verificationToken,
+      );
+      expect(result).toEqual({ message: genericMessage });
+    });
+
+    it('does nothing for an already verified account but answers the same', async () => {
+      repo.findByEmail.mockResolvedValue(makeUser({ emailVerified: true }));
+
+      const result = await service.resendVerification({
+        email: 'maria@example.com',
+      });
+
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(mail.send).not.toHaveBeenCalled();
+      expect(result).toEqual({ message: genericMessage });
+    });
+
+    it('does not reveal that an unknown email is not registered', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+
+      const result = await service.resendVerification({
+        email: 'nadie@example.com',
+      });
+
+      expect(mail.send).not.toHaveBeenCalled();
+      expect(result).toEqual({ message: genericMessage });
+    });
+  });
+
   describe('login', () => {
     it('rejects an unverified account', async () => {
       const passwordHash = await bcrypt.hash('password1', 10);
@@ -185,6 +246,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         accessToken: 'signed-jwt',
         user: { id: user.id, name: user.name, email: user.email },
+        role: null,
       });
     });
 
@@ -193,25 +255,60 @@ describe('AuthService', () => {
       const user = makeUser({ emailVerified: true, passwordHash });
       repo.findByEmail.mockResolvedValue(user);
       membershipRepo.find.mockResolvedValue([
-        { organizationId: 'org-1' } as OrganizationMembership,
+        {
+          organizationId: 'org-1',
+          role: OrganizationMembershipRole.OWNER,
+          active: true,
+        } as OrganizationMembership,
       ]);
 
-      await service.login({ email: user.email, password: 'password1' });
+      const result = await service.login({
+        email: user.email,
+        password: 'password1',
+      });
 
       expect(jwt.sign).toHaveBeenCalledWith({
         sub: user.id,
         email: user.email,
         orgId: 'org-1',
       });
+      expect(result.role).toBe(OrganizationMembershipRole.OWNER);
     });
 
-    it('does not pick an orgId when the user belongs to several organizations', async () => {
+    it('only considers active memberships when auto-selecting an organization', async () => {
+      const passwordHash = await bcrypt.hash('password1', 10);
+      const user = makeUser({ emailVerified: true, passwordHash });
+      repo.findByEmail.mockResolvedValue(user);
+      // El usuario todavía no tiene ninguna membresía (recién registrado):
+      // debe poder loguearse igual para completar el onboarding.
+      membershipRepo.find.mockResolvedValue([]);
+
+      const result = await service.login({
+        email: user.email,
+        password: 'password1',
+      });
+
+      // Trae TODAS las membresías (no solo las activas): necesita distinguir
+      // "nunca tuvo organización" (login permitido) de "las tenía y se las
+      // deshabilitaron" (login rechazado, CP-15-02).
+      expect(membershipRepo.find).toHaveBeenCalledWith({
+        where: { userId: user.id },
+      });
+      expect(jwt.sign).toHaveBeenCalledWith({
+        sub: user.id,
+        email: user.email,
+        orgId: undefined,
+      });
+      expect(result.role).toBeNull();
+    });
+
+    it('does not pick an orgId when the user belongs to several active organizations', async () => {
       const passwordHash = await bcrypt.hash('password1', 10);
       const user = makeUser({ emailVerified: true, passwordHash });
       repo.findByEmail.mockResolvedValue(user);
       membershipRepo.find.mockResolvedValue([
-        { organizationId: 'org-1' } as OrganizationMembership,
-        { organizationId: 'org-2' } as OrganizationMembership,
+        { organizationId: 'org-1', active: true } as OrganizationMembership,
+        { organizationId: 'org-2', active: true } as OrganizationMembership,
       ]);
 
       await service.login({ email: user.email, password: 'password1' });
@@ -222,6 +319,19 @@ describe('AuthService', () => {
         orgId: undefined,
       });
     });
+
+    it('rejects the login when every membership the user has is disabled (CP-15-02)', async () => {
+      const passwordHash = await bcrypt.hash('password1', 10);
+      const user = makeUser({ emailVerified: true, passwordHash });
+      repo.findByEmail.mockResolvedValue(user);
+      membershipRepo.find.mockResolvedValue([
+        { organizationId: 'org-1', active: false } as OrganizationMembership,
+      ]);
+
+      await expect(
+        service.login({ email: user.email, password: 'password1' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
   });
 
   describe('switchOrg', () => {
@@ -230,6 +340,8 @@ describe('AuthService', () => {
       repo.findById.mockResolvedValue(user);
       membershipRepo.findOneBy.mockResolvedValue({
         organizationId: 'org-2',
+        role: OrganizationMembershipRole.COORDINATOR,
+        active: true,
       } as OrganizationMembership);
 
       const result = await service.switchOrg(user.id, 'org-2');
@@ -250,6 +362,139 @@ describe('AuthService', () => {
       await expect(service.switchOrg(user.id, 'org-2')).rejects.toThrow(
         ForbiddenException,
       );
+    });
+
+    it('rejects switching to an organization where the membership is disabled', async () => {
+      const user = makeUser();
+      repo.findById.mockResolvedValue(user);
+      membershipRepo.findOneBy.mockResolvedValue({
+        organizationId: 'org-2',
+        role: OrganizationMembershipRole.VOLUNTEER,
+        active: false,
+      } as OrganizationMembership);
+
+      await expect(service.switchOrg(user.id, 'org-2')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('generates a token, saves user and sends mail when email exists', async () => {
+      const user = makeUser();
+      repo.findByEmail.mockResolvedValue(user);
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+
+      const res = await service.forgotPassword({ email: user.email });
+
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resetPasswordToken: expect.any(String),
+          resetPasswordTokenExpiresAt: expect.any(Date),
+        }),
+      );
+      expect(resetMail.send).toHaveBeenCalledTimes(1);
+      expect(res.message).toContain('Si el correo está registrado');
+    });
+
+    it('returns same security message when email does not exist (PU-3)', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+
+      const res = await service.forgotPassword({
+        email: 'nonexistent@example.com',
+      });
+
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(resetMail.send).not.toHaveBeenCalled();
+      expect(res.message).toContain('Si el correo está registrado');
+    });
+  });
+
+  describe('verifyResetToken', () => {
+    it('succeeds for valid unexpired token', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'valid-reset-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() + 60_000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+
+      await expect(
+        service.verifyResetToken('valid-reset-token'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('rejects an expired token (PU-4)', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'expired-reset-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() - 1000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+
+      await expect(
+        service.verifyResetToken('expired-reset-token'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an invalid token', async () => {
+      repo.findByResetPasswordToken.mockResolvedValue(null);
+
+      await expect(service.verifyResetToken('unknown-token')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('updates password and clears token fields when valid (PU-2)', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'valid-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() + 60_000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+
+      await service.resetPassword({
+        token: 'valid-token',
+        password: 'newPassword123',
+        confirmPassword: 'newPassword123',
+      });
+
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resetPasswordToken: null,
+          resetPasswordTokenExpiresAt: null,
+        }),
+      );
+      const savedUser = repo.save.mock.calls[0][0];
+      expect(
+        await bcrypt.compare('newPassword123', savedUser.passwordHash),
+      ).toBe(true);
+    });
+
+    it('rejects mismatched passwords', async () => {
+      await expect(
+        service.resetPassword({
+          token: 'some-token',
+          password: 'newPassword123',
+          confirmPassword: 'differentPassword',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects reset with expired token', async () => {
+      const user = makeUser({
+        resetPasswordToken: 'expired-token',
+        resetPasswordTokenExpiresAt: new Date(Date.now() - 1000),
+      });
+      repo.findByResetPasswordToken.mockResolvedValue(user);
+
+      await expect(
+        service.resetPassword({
+          token: 'expired-token',
+          password: 'newPassword123',
+          confirmPassword: 'newPassword123',
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

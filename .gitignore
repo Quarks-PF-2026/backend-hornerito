@@ -3,3 +3,16 @@ dist
 .env
 *.log
 coverage
+
+# Restos del canal viejo por CSV, reemplazado por el MCP de Atlassian
+# (ADR-004). La dinámica quedó archivada en ../lab-hornerito/archivo/jira-csv/.
+# Se sigue ignorando por si alguien todavía tiene la carpeta local.
+.jira/
+
+# Permisos personales de cada integrante. `settings.json` sí se versiona.
+.claude/settings.local.json
+
+# Cache local de los hooks (ej. check-team-skills). Es por máquina.
+.claude/.cache/
+.vercel
+.env*

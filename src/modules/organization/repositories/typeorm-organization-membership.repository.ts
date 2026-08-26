@@ -21,4 +21,23 @@ export class TypeOrmOrganizationMembershipRepository implements IOrganizationMem
   ): Promise<OrganizationMembership | null> {
     return this.repo.findOneBy({ userId, organizationId });
   }
+
+  findByOrganizationId(
+    organizationId: string,
+  ): Promise<OrganizationMembership[]> {
+    return this.repo.find({
+      where: { organizationId },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  create(
+    membership: Partial<OrganizationMembership>,
+  ): Promise<OrganizationMembership> {
+    return this.repo.save(this.repo.create(membership));
+  }
+
+  save(membership: OrganizationMembership): Promise<OrganizationMembership> {
+    return this.repo.save(membership);
+  }
 }

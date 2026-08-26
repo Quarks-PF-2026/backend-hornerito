@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { IUserRepository } from './user-repository.interface';
 
@@ -14,12 +14,20 @@ export class TypeOrmUserRepository implements IUserRepository {
     return this.repo.findOneBy({ id });
   }
 
+  findByIds(ids: string[]): Promise<User[]> {
+    return ids.length ? this.repo.findBy({ id: In(ids) }) : Promise.resolve([]);
+  }
+
   findByEmail(email: string): Promise<User | null> {
     return this.repo.findOneBy({ email });
   }
 
   findByVerificationToken(token: string): Promise<User | null> {
     return this.repo.findOneBy({ verificationToken: token });
+  }
+
+  findByResetPasswordToken(token: string): Promise<User | null> {
+    return this.repo.findOneBy({ resetPasswordToken: token });
   }
 
   create(user: Partial<User>): Promise<User> {

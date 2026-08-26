@@ -1,131 +1,164 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module';
-import { TenantConnectionService } from '../src/modules/tenant/tenant-connection.service';
-import { schemaNameFor } from '../src/modules/tenant/tenant-schema.util';
+import {
+  bootstrapApp,
+  cleanupOrganizations,
+  cleanupUsers,
+  createOrganization,
+  registerAndLogin,
+  uniqueEmail,
+} from './sprint2/helpers';
 
+const APP_ROLE = 'hornerito_app';
+
+/**
+ * El aislamiento entre organizaciones ahora es por columna `organizationId`
+ * más políticas RLS. Estos casos cubren las dos capas: que la API no cruce
+ * datos, y que la base tampoco los deje cruzar aunque la query venga sin
+ * filtro.
+ */
 describe('Tenant isolation (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
   let dataSource: DataSource;
-  let tenantConnectionService: TenantConnectionService;
-  const createdOrgIds: string[] = [];
-  const createdEmails: string[] = [];
+
+  const orgIds: string[] = [];
+  const emails: string[] = [];
+
+  let tokenA: string;
+  let tokenB: string;
+  let orgA: string;
+  let orgB: string;
+  let supplyIdA: string;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    ({ app, dataSource } = await bootstrapApp());
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
-    await app.init();
+    const emailA = uniqueEmail('tenant-a');
+    const emailB = uniqueEmail('tenant-b');
+    emails.push(emailA, emailB);
 
-    dataSource = app.get(DataSource);
-    tenantConnectionService = app.get(TenantConnectionService);
+    const sessionA = await registerAndLogin(app, emailA);
+    const orgAResult = await createOrganization(app, sessionA.token, {
+      name: 'Comedor A',
+    });
+    orgA = orgAResult.id;
+    orgIds.push(orgA);
+    tokenA = (await login(emailA)).token;
+
+    const sessionB = await registerAndLogin(app, emailB);
+    const orgBResult = await createOrganization(app, sessionB.token, {
+      name: 'Comedor B',
+    });
+    orgB = orgBResult.id;
+    orgIds.push(orgB);
+    tokenB = (await login(emailB)).token;
+
+    const created = await request(app.getHttpServer())
+      .post('/supplies')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ name: 'Arroz', category: 'Alimentos secos', unit: 'Kilogramos' })
+      .expect(201);
+    supplyIdA = (created.body as { id: string }).id;
   });
 
   afterAll(async () => {
-    for (const orgId of createdOrgIds) {
-      await dataSource.query(
-        `DROP SCHEMA IF EXISTS "${schemaNameFor(orgId)}" CASCADE`,
-      );
-    }
-    if (createdOrgIds.length > 0) {
-      await dataSource.query(
-        `DELETE FROM organization_memberships WHERE "organizationId" = ANY($1)`,
-        [createdOrgIds],
-      );
-      await dataSource.query(`DELETE FROM organizations WHERE id = ANY($1)`, [
-        createdOrgIds,
-      ]);
-    }
-    for (const email of createdEmails) {
-      await dataSource.query(`DELETE FROM users WHERE email = $1`, [email]);
-    }
+    await cleanupOrganizations(dataSource, orgIds);
+    await cleanupUsers(dataSource, emails);
     await app.close();
   });
 
-  async function registerAndLogin(email: string): Promise<string> {
-    createdEmails.push(email);
-    await request(app.getHttpServer()).post('/auth/register').send({
-      name: 'Test User',
-      email,
-      password: 'password1',
-      confirmPassword: 'password1',
-      acceptedTerms: true,
-    });
-
-    const loginResponse = await request(app.getHttpServer())
+  /**
+   * El token que devuelve `registerAndLogin` se emite antes de que exista la
+   * organización, así que no trae `orgId`. Volver a loguearse lo incluye.
+   */
+  async function login(email: string) {
+    const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email, password: 'password1' })
       .expect(200);
-
-    return (loginResponse.body as { accessToken: string }).accessToken;
+    return { token: (res.body as { accessToken: string }).accessToken };
   }
 
-  async function createOrganization(token: string): Promise<string> {
-    const response = await request(app.getHttpServer())
-      .put('/organization/me')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        name: 'Clinica de prueba',
-        description: 'desc',
-        address: 'addr',
-        contact: 'contact',
-      })
+  /** Corre SQL con el rol y el contexto de tenant de una request real. */
+  async function asTenant<T>(
+    organizationId: string | null,
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<T> {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    try {
+      await queryRunner.query(`SET ROLE "${APP_ROLE}"`);
+      if (organizationId) {
+        await queryRunner.query(`SELECT set_config($1, $2, false)`, [
+          'app.current_org',
+          organizationId,
+        ]);
+      }
+      return (await queryRunner.query(sql, params)) as T;
+    } finally {
+      await queryRunner.query(`RESET ROLE`).catch(() => undefined);
+      await queryRunner.query(`RESET app.current_org`).catch(() => undefined);
+      await queryRunner.release();
+    }
+  }
+
+  it('no deja ver por la API los insumos de otra organización', async () => {
+    const mine = await request(app.getHttpServer())
+      .get('/supplies')
+      .set('Authorization', `Bearer ${tokenA}`)
       .expect(200);
-
-    const orgId = (response.body as { id: string }).id;
-    createdOrgIds.push(orgId);
-    return orgId;
-  }
-
-  it('provisions a distinct schema per organization', async () => {
-    const tokenA = await registerAndLogin(`tenant-a-${Date.now()}@test.com`);
-    const orgA = await createOrganization(tokenA);
-
-    const tokenB = await registerAndLogin(`tenant-b-${Date.now()}@test.com`);
-    const orgB = await createOrganization(tokenB);
-
-    const rows: Array<{ schema_name: string }> = await dataSource.query(
-      `SELECT schema_name FROM information_schema.schemata WHERE schema_name = ANY($1)`,
-      [[schemaNameFor(orgA), schemaNameFor(orgB)]],
+    expect((mine.body as Array<{ id: string }>).map((s) => s.id)).toContain(
+      supplyIdA,
     );
 
-    expect(rows.map((r) => r.schema_name).sort()).toEqual(
-      [schemaNameFor(orgA), schemaNameFor(orgB)].sort(),
-    );
+    const theirs = await request(app.getHttpServer())
+      .get('/supplies')
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(200);
+    expect(
+      (theirs.body as Array<{ id: string }>).map((s) => s.id),
+    ).not.toContain(supplyIdA);
   });
 
-  it('keeps data written in one tenant schema invisible from another', async () => {
-    const tokenA = await registerAndLogin(`tenant-c-${Date.now()}@test.com`);
-    const orgA = await createOrganization(tokenA);
+  it('no deja tocar por id un insumo de otra organización', async () => {
+    await request(app.getHttpServer())
+      .patch(`/supplies/${supplyIdA}/toggle`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(404);
+  });
 
-    const tokenB = await registerAndLogin(`tenant-d-${Date.now()}@test.com`);
-    const orgB = await createOrganization(tokenB);
-
-    const dataSourceA = await tenantConnectionService.getDataSource(orgA);
-    const dataSourceB = await tenantConnectionService.getDataSource(orgB);
-
-    await dataSourceA.query(
-      `CREATE TABLE IF NOT EXISTS tenant_marker (id serial PRIMARY KEY, value text)`,
+  it('RLS oculta las filas de otra organización aunque la query no filtre', async () => {
+    const seenByA = await asTenant<Array<{ id: string }>>(
+      orgA,
+      `SELECT id FROM supplies`,
     );
-    await dataSourceA.query(`INSERT INTO tenant_marker (value) VALUES ($1)`, [
-      'only-in-a',
-    ]);
+    expect(seenByA.map((row) => row.id)).toContain(supplyIdA);
 
-    const rowsInA = await dataSourceA.query<Array<{ value: string }>>(
-      `SELECT value FROM tenant_marker`,
+    const seenByB = await asTenant<Array<{ id: string }>>(
+      orgB,
+      `SELECT id FROM supplies`,
     );
-    expect(rowsInA).toEqual([{ value: 'only-in-a' }]);
+    expect(seenByB.map((row) => row.id)).not.toContain(supplyIdA);
+  });
 
+  it('sin organización en la sesión, el rol de la app no ve nada', async () => {
+    const rows = await asTenant<Array<{ count: string }>>(
+      null,
+      `SELECT count(*)::int AS count FROM supplies`,
+    );
+    expect(rows[0].count).toBe(0);
+  });
+
+  it('RLS rechaza escribir una fila con la organización de otro', async () => {
     await expect(
-      dataSourceB.query(`SELECT value FROM tenant_marker`),
-    ).rejects.toThrow();
+      asTenant(
+        orgB,
+        `INSERT INTO supplies ("organizationId", name, category, unit)
+         VALUES ($1, 'Intruso', 'Alimentos secos', 'Kilogramos')`,
+        [orgA],
+      ),
+    ).rejects.toThrow(/row-level security/i);
   });
 });
