@@ -14,7 +14,7 @@ import { TenantContextService } from '../tenant/tenant-context.service';
 import { DonationService } from './donation.service';
 import { CreateDonationDto } from './dto/create-donation.dto';
 import { DonationItem } from './entities/donation-item.entity';
-import { Donation } from './entities/donation.entity';
+import { InPersonDonation } from './entities/in-person-donation.entity';
 
 function makeNeed(overrides: Partial<Need> = {}): Need {
   return {
@@ -77,10 +77,10 @@ describe('DonationService', () => {
     let savedId = 0;
     donationRepo = {
       create: jest.fn(
-        (data: Partial<Donation>) =>
-          ({ ...data, id: 'donation-1' }) as Donation,
+        (data: Partial<InPersonDonation>) =>
+          ({ ...data, id: 'donation-1' }) as InPersonDonation,
       ),
-      save: jest.fn((entity: Donation) => Promise.resolve(entity)),
+      save: jest.fn((entity: InPersonDonation) => Promise.resolve(entity)),
       find: jest.fn(),
     };
     itemRepo = {
@@ -105,7 +105,7 @@ describe('DonationService', () => {
 
     const manager = {
       getRepository: (entity: unknown) => {
-        if (entity === Donation) return donationRepo;
+        if (entity === InPersonDonation) return donationRepo;
         if (entity === DonationItem) return itemRepo;
         if (entity === Need) return needRepo;
         if (entity === Supply) return supplyRepo;

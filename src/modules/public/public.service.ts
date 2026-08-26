@@ -328,6 +328,15 @@ export class PublicService {
         content: post.content,
         createdAt: post.createdAt,
       })),
+      // Los datos bancarios son públicos a propósito: son el destino de la
+      // transferencia, y sin ellos el donante no puede donar (QK-20).
+      donations: {
+        acceptsMonetary: Boolean(organization.paymentAlias),
+        alias: organization.paymentAlias,
+        holder: organization.paymentHolder,
+        cuit: organization.paymentCuit,
+        bank: organization.paymentBank,
+      },
       volunteering: {
         seeksVolunteers: organization.seeksVolunteers,
         types: volunteerTypes.map((type) => ({

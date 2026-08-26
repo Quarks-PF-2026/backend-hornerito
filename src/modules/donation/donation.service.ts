@@ -11,7 +11,7 @@ import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateDonationDto } from './dto/create-donation.dto';
 import { DonationItem } from './entities/donation-item.entity';
-import { Donation } from './entities/donation.entity';
+import { InPersonDonation } from './entities/in-person-donation.entity';
 
 export interface DonationResponse {
   id: string;
@@ -33,7 +33,10 @@ export class DonationService {
 
   async listMine(): Promise<DonationResponse[]> {
     const manager = this.tenantContext.getManager();
-    const donations = await manager.getRepository(Donation).find({
+    // `InPersonDonation` y no `Donation`: las dos variantes comparten tabla, y
+    // el repositorio de la subclase agrega el filtro por `kind`. Con la clase
+    // base este historial listaría también las donaciones económicas.
+    const donations = await manager.getRepository(InPersonDonation).find({
       where: { organizationId: this.orgId },
       order: { createdAt: 'DESC' },
     });
@@ -71,8 +74,8 @@ export class DonationService {
       await this.assertCollectionPointExists(trx, dto.collectionPointId);
       await this.assertItemsAreValid(trx, dto);
 
-      const donation = await trx.getRepository(Donation).save(
-        trx.getRepository(Donation).create({
+      const donation = await trx.getRepository(InPersonDonation).save(
+        trx.getRepository(InPersonDonation).create({
           organizationId: this.orgId,
           collectionPointId: dto.collectionPointId ?? null,
           donorName: dto.donorName?.trim() || null,
@@ -202,7 +205,7 @@ export class DonationService {
 }
 
 function toResponse(
-  donation: Donation,
+  donation: InPersonDonation,
   items: DonationItem[],
 ): DonationResponse {
   return {
