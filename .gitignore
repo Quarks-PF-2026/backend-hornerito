@@ -14,3 +14,5 @@ coverage
 
 # Cache local de los hooks (ej. check-team-skills). Es por máquina.
 .claude/.cache/
+.vercel
+.env*
