@@ -10,5 +10,8 @@ import { MediaService } from './media.service';
   imports: [AuthModule, TypeOrmModule.forFeature([Media])],
   controllers: [MediaController],
   providers: [MediaService, CloudinaryService],
+  // La donación económica sube el comprobante por su propia vía anónima, que no
+  // pasa por `MediaService` (no hay tenant ni rol que chequear).
+  exports: [CloudinaryService],
 })
 export class MediaModule {}

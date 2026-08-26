@@ -58,6 +58,19 @@ export class OrganizationService {
       if (dto.seeksVolunteers !== undefined) {
         existing.seeksVolunteers = dto.seeksVolunteers;
       }
+      // Un string vacío es "borrar el dato"; `undefined` es "no lo mandaron".
+      if (dto.paymentAlias !== undefined) {
+        existing.paymentAlias = dto.paymentAlias.trim() || null;
+      }
+      if (dto.paymentHolder !== undefined) {
+        existing.paymentHolder = dto.paymentHolder.trim() || null;
+      }
+      if (dto.paymentCuit !== undefined) {
+        existing.paymentCuit = dto.paymentCuit.trim() || null;
+      }
+      if (dto.paymentBank !== undefined) {
+        existing.paymentBank = dto.paymentBank.trim() || null;
+      }
       if (existing.status === OrganizationStatus.REJECTED) {
         existing.status = OrganizationStatus.PENDING;
         existing.rejectReason = null;
@@ -106,6 +119,10 @@ export class OrganizationService {
           address: dto.address,
           contact: dto.contact,
           seeksVolunteers: dto.seeksVolunteers ?? false,
+          paymentAlias: dto.paymentAlias?.trim() || null,
+          paymentHolder: dto.paymentHolder?.trim() || null,
+          paymentCuit: dto.paymentCuit?.trim() || null,
+          paymentBank: dto.paymentBank?.trim() || null,
           // Toda organización nace pendiente de validación (default de la
           // entidad); un platform admin la valida o rechaza vía
           // `/admin/organizations` (ver AdminOrganizationService).

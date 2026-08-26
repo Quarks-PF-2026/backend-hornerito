@@ -46,6 +46,23 @@ export class Organization {
   @Column({ default: false })
   seeksVolunteers: boolean;
 
+  /**
+   * Alias o CBU donde recibir donaciones económicas (QK-20). Es el campo que
+   * prende la sección "Donar dinero" en la ficha pública: sin él el donante no
+   * tiene a dónde transferir, así que el flujo no se ofrece.
+   */
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  paymentAlias: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  paymentHolder: string | null;
+
+  @Column({ type: 'varchar', length: 13, nullable: true })
+  paymentCuit: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  paymentBank: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

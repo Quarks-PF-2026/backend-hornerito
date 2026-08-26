@@ -149,3 +149,102 @@ export function volunteerRequestRejectedMail(
     text: `${organizationName} no aceptó tu solicitud. Motivo: ${reason}`,
   };
 }
+
+/** Los montos se muestran como los escribe la gente acá: $1.234,56. */
+function money(amount: number): string {
+  return `$${amount.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * Acuse al donante que declaró una donación económica (QK-20). Es también el
+ * comprobante que le queda: sin cuenta, este correo es el único registro que se
+ * lleva de lo que declaró.
+ */
+export function monetaryDonationReceivedMail(
+  to: string,
+  organizationName: string,
+  amount: number,
+  operationNumber: string | null,
+): MailMessage {
+  const operation = operationNumber
+    ? `<p>Número de operación: <strong>${esc(operationNumber)}</strong></p>`
+    : '';
+  return {
+    to,
+    subject: `Recibimos tu donación a ${organizationName}`,
+    html: layout(
+      'Recibimos tu donación',
+      `<p>Registramos tu donación de <strong>${money(amount)}</strong> a ${esc(organizationName)}.</p>
+       ${operation}
+       <p>Queda pendiente hasta que la organización confirme la recepción del dinero. Te avisamos por este mismo correo.</p>`,
+    ),
+    text: `Registramos tu donación de ${money(amount)} a ${organizationName}. Queda pendiente de confirmación.`,
+  };
+}
+
+/** Aviso a quienes pueden confirmar la recepción, para que no quede olvidada. */
+export function monetaryDonationNoticeMail(
+  to: string,
+  organizationName: string,
+  amount: number,
+  donorName: string | null,
+  operationNumber: string | null,
+  url: string,
+): MailMessage {
+  const who = donorName ? esc(donorName) : 'Alguien de forma anónima';
+  const operation = operationNumber
+    ? `<p>Número de operación: <strong>${esc(operationNumber)}</strong></p>`
+    : '';
+  return {
+    to,
+    subject: `Nueva donación económica en ${organizationName}`,
+    html: layout(
+      'Tenés una donación por confirmar',
+      `<p><strong>${who}</strong> declaró una donación de <strong>${money(amount)}</strong> a ${esc(organizationName)}.</p>
+       ${operation}
+       <p>Verificá el movimiento en tu cuenta antes de confirmarla.</p>`,
+      { url, label: 'Ver donaciones' },
+    ),
+    text: `${donorName ?? 'Un donante anónimo'} declaró una donación de ${money(amount)} en ${organizationName}: ${url}`,
+  };
+}
+
+/** La organización se expidió: confirmó la recepción o la rechazó con motivo. */
+export function monetaryDonationDecidedMail(
+  to: string,
+  organizationName: string,
+  amount: number,
+  confirmed: boolean,
+  rejectReason: string | null,
+): MailMessage {
+  if (confirmed) {
+    return {
+      to,
+      subject: `${organizationName} confirmó tu donación`,
+      html: layout(
+        '¡Gracias! Tu donación fue confirmada',
+        `<p>${esc(organizationName)} confirmó la recepción de tu donación de <strong>${money(amount)}</strong>.</p>`,
+      ),
+      text: `${organizationName} confirmó tu donación de ${money(amount)}. ¡Gracias!`,
+    };
+  }
+  const reason = rejectReason
+    ? `<p style="background:#F6F1E9;border-radius:12px;padding:12px"><strong>Motivo:</strong> ${esc(rejectReason)}</p>`
+    : '';
+  return {
+    to,
+    subject: `Sobre tu donación a ${organizationName}`,
+    html: layout(
+      'No pudimos confirmar tu donación',
+      `<p>${esc(organizationName)} no pudo confirmar la recepción de tu donación de <strong>${money(amount)}</strong>.</p>
+       ${reason}
+       <p>Si creés que es un error, comunicate con la organización.</p>`,
+    ),
+    text: `${organizationName} no pudo confirmar tu donación de ${money(amount)}.${
+      rejectReason ? ` Motivo: ${rejectReason}` : ''
+    }`,
+  };
+}
