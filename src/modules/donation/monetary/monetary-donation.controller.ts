@@ -33,7 +33,7 @@ export class MonetaryDonationController {
   /** El historial lo ve cualquier miembro activo, igual que el presencial. */
   @Get()
   list(@Query() query: ListMonetaryDonationsDto) {
-    return this.donations.list(query.status);
+    return this.donations.list(query);
   }
 
   @Roles(...MEMBER_MANAGER_ROLES)

@@ -38,7 +38,9 @@ import {
   MonetaryDonation,
   MonetaryDonationStatus,
 } from '../entities/monetary-donation.entity';
+import { createdAtWithin } from '../date-range';
 import { CreateMonetaryDonationDto } from './dto/create-monetary-donation.dto';
+import { ListMonetaryDonationsDto } from './dto/list-monetary-donations.dto';
 import { stateFor } from './states';
 
 export interface MonetaryDonationView {
@@ -148,11 +150,15 @@ export class MonetaryDonationService {
   }
 
   /** Vía panel: el historial lo ve cualquier miembro activo. */
-  async list(status?: MonetaryDonationStatus): Promise<MonetaryDonationView[]> {
+  async list(query: ListMonetaryDonationsDto = {}): Promise<MonetaryDonationView[]> {
+    // La clave se omite cuando no hay rango: TypeORM rechaza un `undefined`
+    // dentro del `where` en vez de ignorarlo.
+    const createdAt = createdAtWithin(query);
     const rows = await this.repo().find({
       where: {
         organizationId: this.orgId,
-        ...(status ? { status } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(createdAt ? { createdAt } : {}),
       },
       order: { createdAt: 'DESC' },
     });

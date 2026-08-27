@@ -9,6 +9,7 @@ import { CollectionPoint } from '../collection-point/entities/collection-point.e
 import { Need, isNeedClosed } from '../need/entities/need.entity';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
+import { DateRange, createdAtWithin } from './date-range';
 import { CreateDonationDto } from './dto/create-donation.dto';
 import { DonationItem } from './entities/donation-item.entity';
 import { InPersonDonation } from './entities/in-person-donation.entity';
@@ -31,13 +32,19 @@ export interface DonationResponse {
 export class DonationService {
   constructor(private readonly tenantContext: TenantContextService) {}
 
-  async listMine(): Promise<DonationResponse[]> {
+  async listMine(range: DateRange = {}): Promise<DonationResponse[]> {
     const manager = this.tenantContext.getManager();
     // `InPersonDonation` y no `Donation`: las dos variantes comparten tabla, y
     // el repositorio de la subclase agrega el filtro por `kind`. Con la clase
     // base este historial listaría también las donaciones económicas.
+    // La clave se omite cuando no hay rango: TypeORM rechaza un `undefined`
+    // dentro del `where` en vez de ignorarlo.
+    const createdAt = createdAtWithin(range);
     const donations = await manager.getRepository(InPersonDonation).find({
-      where: { organizationId: this.orgId },
+      where: {
+        organizationId: this.orgId,
+        ...(createdAt ? { createdAt } : {}),
+      },
       order: { createdAt: 'DESC' },
     });
     if (donations.length === 0) {

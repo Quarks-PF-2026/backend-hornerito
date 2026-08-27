@@ -350,25 +350,63 @@ describe('MonetaryDonationService', () => {
   });
 
   describe('list', () => {
-    it('filtra por estado cuando se pide', async () => {
-      await service.list(MonetaryDonationStatus.DECLARADA);
+    /** El `where` con el que se consultó, para mirarlo campo por campo. */
+    function lastWhere(): Record<string, unknown> {
+      const [args] = tenantRepo.find.mock.calls.at(-1) as [
+        { where: Record<string, unknown> },
+      ];
+      return args.where;
+    }
 
-      expect(tenantRepo.find).toHaveBeenCalledWith({
-        where: {
-          organizationId: 'org-1',
-          status: MonetaryDonationStatus.DECLARADA,
-        },
-        order: { createdAt: 'DESC' },
+    it('filtra por estado cuando se pide', async () => {
+      await service.list({ status: MonetaryDonationStatus.DECLARADA });
+
+      expect(lastWhere()).toMatchObject({
+        organizationId: 'org-1',
+        status: MonetaryDonationStatus.DECLARADA,
       });
     });
 
     it('sin filtro devuelve todo el historial de la organización', async () => {
       await service.list();
 
-      expect(tenantRepo.find).toHaveBeenCalledWith({
-        where: { organizationId: 'org-1' },
-        order: { createdAt: 'DESC' },
+      const where = lastWhere();
+      expect(where.organizationId).toBe('org-1');
+      expect(where.status).toBeUndefined();
+      // Sin rango no se agrega condición sobre la fecha.
+      expect(where.createdAt).toBeUndefined();
+    });
+
+    it('acota por rango de fechas', async () => {
+      await service.list({ from: '2026-08-01', to: '2026-08-31' });
+
+      expect(lastWhere().createdAt).toBeDefined();
+    });
+
+    it('combina estado y rango en la misma consulta', async () => {
+      await service.list({
+        status: MonetaryDonationStatus.CONFIRMADA,
+        from: '2026-08-01',
       });
+
+      const where = lastWhere();
+      expect(where.status).toBe(MonetaryDonationStatus.CONFIRMADA);
+      expect(where.createdAt).toBeDefined();
+    });
+
+    it('rechaza un rango dado vuelta', async () => {
+      await expect(
+        service.list({ from: '2026-08-31', to: '2026-08-01' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('ordena de la más nueva a la más vieja', async () => {
+      await service.list();
+
+      const [args] = tenantRepo.find.mock.calls.at(-1) as [
+        { order: Record<string, string> },
+      ];
+      expect(args.order).toEqual({ createdAt: 'DESC' });
     });
   });
 });
