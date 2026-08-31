@@ -43,18 +43,20 @@ describe('createdAtWithin', () => {
     const [since, until] = bounds(
       createdAtWithin({ from: '2026-08-20', to: '2026-08-20' }),
     );
-    expect(new Date(`${until}Z`).getTime() - new Date(`${since}Z`).getTime()).toBe(
-      24 * 60 * 60 * 1000 - 1,
-    );
+    expect(
+      new Date(`${until}Z`).getTime() - new Date(`${since}Z`).getTime(),
+    ).toBe(24 * 60 * 60 * 1000 - 1);
   });
 
   it('rechaza un "desde" posterior al "hasta"', () => {
-    expect(() => createdAtWithin({ from: '2026-08-31', to: '2026-08-01' })).toThrow(
-      BadRequestException,
-    );
+    expect(() =>
+      createdAtWithin({ from: '2026-08-31', to: '2026-08-01' }),
+    ).toThrow(BadRequestException);
   });
 
   it('rechaza una fecha que no existe', () => {
-    expect(() => createdAtWithin({ from: '2026-02-30' })).toThrow(BadRequestException);
+    expect(() => createdAtWithin({ from: '2026-02-30' })).toThrow(
+      BadRequestException,
+    );
   });
 });

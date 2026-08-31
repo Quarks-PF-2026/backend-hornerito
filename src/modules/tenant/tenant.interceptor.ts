@@ -27,6 +27,17 @@ export const CURRENT_ORG_SETTING = 'app.current_org';
  * `request.organization`. Si no hay organización (rutas públicas, auth,
  * invitaciones por token) no hace nada y todo sigue corriendo como owner, que
  * es lo que necesitan las lecturas cross-tenant legítimas.
+ *
+ * **Invariante que impone al resto del código:** mientras el runner esté
+ * tomado, nada en esa request puede pedirle otra conexión al pool. El runner
+ * no vuelve hasta el `finalize()`, así que un `@InjectRepository` en un
+ * servicio tenant-scoped espera una conexión que solo se libera cuando termine
+ * la request que está esperando: deadlock, no lentitud. En desarrollo pasa
+ * inadvertido porque sobran conexiones; con el pool chico de serverless es un
+ * 504 a los 300s que además envenena la instancia. De ahí que los servicios
+ * bajo `TenantGuard` pidan el manager a `TenantContextService`, y que
+ * `tenant-pool-deadlock.e2e-spec.ts` estrangule el pool para que la invariante
+ * no se pueda romper en silencio.
  */
 @Injectable()
 export class TenantContextInterceptor implements NestInterceptor {

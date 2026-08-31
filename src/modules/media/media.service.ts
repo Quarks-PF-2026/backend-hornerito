@@ -66,6 +66,11 @@ export class MediaService {
     await this.assertOwnerExists(owner, ownerType, ownerId, actor);
     this.assertValidImage(file, config);
 
+    // ponytail: la subida es I/O de red hecha con la conexión del tenant
+    // retenida por `TenantContextInterceptor`. No deadlockea —no pide una
+    // segunda conexión— pero monopoliza un slot del pool mientras Cloudinary
+    // responde. El techo se sube sacando la subida de la sección crítica; es
+    // además el prerrequisito para volver al pooler con `SET LOCAL`.
     const uploaded = await this.cloudinary.upload(file!.buffer, {
       folder: this.folderFor(actor.orgId, ownerType, ownerId),
       transformation: config.transformation,
