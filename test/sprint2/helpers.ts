@@ -48,11 +48,9 @@ export async function registerAndLogin(
 
   // El login exige la cuenta verificada, así que recorremos el flujo real:
   // el token solo vive en la base porque en producción viaja por correo.
-  const [{ verificationToken }] = (await app
+  const [{ verificationToken }] = await app
     .get(DataSource)
-    .query(`SELECT "verificationToken" FROM users WHERE email = $1`, [
-      email,
-    ])) as { verificationToken: string }[];
+    .query(`SELECT "verificationToken" FROM users WHERE email = $1`, [email]);
   await request(app.getHttpServer())
     .get('/auth/verify')
     .query({ token: verificationToken })

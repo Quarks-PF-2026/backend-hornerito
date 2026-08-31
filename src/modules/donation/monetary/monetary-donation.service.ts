@@ -150,7 +150,9 @@ export class MonetaryDonationService {
   }
 
   /** Vía panel: el historial lo ve cualquier miembro activo. */
-  async list(query: ListMonetaryDonationsDto = {}): Promise<MonetaryDonationView[]> {
+  async list(
+    query: ListMonetaryDonationsDto = {},
+  ): Promise<MonetaryDonationView[]> {
     // La clave se omite cuando no hay rango: TypeORM rechaza un `undefined`
     // dentro del `where` en vez de ignorarlo.
     const createdAt = createdAtWithin(query);
@@ -267,13 +269,21 @@ export class MonetaryDonationService {
     }
   }
 
+  /**
+   * Solo la llaman `confirm` y `reject`, que entran con `TenantGuard`: acá el
+   * interceptor ya tiene un runner tomado para toda la request, así que pedir
+   * el nombre de la organización por `this.organizations` sería pedirle al pool
+   * una segunda conexión que la propia request no puede liberar. Con el pool
+   * chico de serverless eso es un deadlock, no una espera.
+   */
   private async notifyDecided(donation: MonetaryDonation): Promise<void> {
     if (!donation.donorContact) {
       return;
     }
-    const organization = await this.organizations.findOneBy({
-      id: donation.organizationId,
-    });
+    const organization = await this.tenantContext
+      .getManager()
+      .getRepository(Organization)
+      .findOneBy({ id: donation.organizationId });
     await this.trySend(
       monetaryDonationDecidedMail(
         donation.donorContact,

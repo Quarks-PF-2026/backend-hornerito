@@ -177,13 +177,17 @@ export class VolunteerRequestService {
    * `VolunteeringService.accept`: dos gestores aprobando a la vez no pueden
    * pasarse de `capacity`.
    *
-   * `MemberService.invite` va **dentro** de la transacción aunque sus
-   * repositorios corran por otra conexión (la de owner) y no puedan por lo
-   * tanto ser atómicos con ella. El orden importa: si `invite` rechaza — ya es
-   * miembro, ya hay invitación pendiente — la transacción revierte y el cupo
-   * no queda consumido. El caso inverso (invitación emitida y commit fallido)
-   * deja una invitación huérfana, que la organización puede cancelar desde
-   * Usuarios; es el lado recuperable del trade-off.
+   * `MemberService.invite` va **dentro** de la transacción y ahora sí es
+   * atómico con ella: desde que pide su manager a `TenantContextService`
+   * escribe por la misma conexión, y `EntityManager.transaction` reusa el
+   * `queryRunner` que ya está en transacción en vez de tomar otro. Así el cupo
+   * y la invitación se confirman o se revierten juntos, y desaparece la
+   * invitación huérfana que dejaba el commit fallido cuando `invite` viajaba
+   * por la conexión de owner.
+   *
+   * El mail de invitación sigue saliendo dentro de la sección crítica, con el
+   * lock pesimista tomado: es la deuda que documenta el `ponytail:` de
+   * `member.service.ts`.
    */
   async approve(
     id: string,
@@ -253,9 +257,14 @@ export class VolunteerRequestService {
     request.decidedAt = new Date();
     const saved = await repo.save(request);
 
-    const organization = await this.organizations.findOneBy({
-      id: organizationId,
-    });
+    // Vía autenticada: el interceptor ya retiene un runner para toda la
+    // request, así que `this.organizations` pediría al pool una segunda
+    // conexión que esta misma request no va a liberar hasta terminar. Con el
+    // pool chico de serverless eso no es lentitud, es deadlock.
+    const organization = await this.tenantContext
+      .getManager()
+      .getRepository(Organization)
+      .findOneBy({ id: organizationId });
     await this.trySend(() =>
       this.mail.send(
         volunteerRequestRejectedMail(
