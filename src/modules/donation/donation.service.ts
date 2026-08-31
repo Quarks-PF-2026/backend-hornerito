@@ -9,9 +9,10 @@ import { CollectionPoint } from '../collection-point/entities/collection-point.e
 import { Need, isNeedClosed } from '../need/entities/need.entity';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
+import { DateRange, createdAtWithin } from './date-range';
 import { CreateDonationDto } from './dto/create-donation.dto';
 import { DonationItem } from './entities/donation-item.entity';
-import { Donation } from './entities/donation.entity';
+import { InPersonDonation } from './entities/in-person-donation.entity';
 
 export interface DonationResponse {
   id: string;
@@ -31,10 +32,19 @@ export interface DonationResponse {
 export class DonationService {
   constructor(private readonly tenantContext: TenantContextService) {}
 
-  async listMine(): Promise<DonationResponse[]> {
+  async listMine(range: DateRange = {}): Promise<DonationResponse[]> {
     const manager = this.tenantContext.getManager();
-    const donations = await manager.getRepository(Donation).find({
-      where: { organizationId: this.orgId },
+    // `InPersonDonation` y no `Donation`: las dos variantes comparten tabla, y
+    // el repositorio de la subclase agrega el filtro por `kind`. Con la clase
+    // base este historial listaría también las donaciones económicas.
+    // La clave se omite cuando no hay rango: TypeORM rechaza un `undefined`
+    // dentro del `where` en vez de ignorarlo.
+    const createdAt = createdAtWithin(range);
+    const donations = await manager.getRepository(InPersonDonation).find({
+      where: {
+        organizationId: this.orgId,
+        ...(createdAt ? { createdAt } : {}),
+      },
       order: { createdAt: 'DESC' },
     });
     if (donations.length === 0) {
@@ -71,8 +81,8 @@ export class DonationService {
       await this.assertCollectionPointExists(trx, dto.collectionPointId);
       await this.assertItemsAreValid(trx, dto);
 
-      const donation = await trx.getRepository(Donation).save(
-        trx.getRepository(Donation).create({
+      const donation = await trx.getRepository(InPersonDonation).save(
+        trx.getRepository(InPersonDonation).create({
           organizationId: this.orgId,
           collectionPointId: dto.collectionPointId ?? null,
           donorName: dto.donorName?.trim() || null,
@@ -202,7 +212,7 @@ export class DonationService {
 }
 
 function toResponse(
-  donation: Donation,
+  donation: InPersonDonation,
   items: DonationItem[],
 ): DonationResponse {
   return {
