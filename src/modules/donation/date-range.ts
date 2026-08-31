@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { Between, FindOperator, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import {
+  Between,
+  FindOperator,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+} from 'typeorm';
 
 /**
  * Rango de días para filtrar un historial. Los dos extremos son opcionales e
@@ -71,7 +76,9 @@ export function createdAtWithin({
   to,
 }: DateRange): FindOperator<Date> | undefined {
   if (from && to && from > to) {
-    throw new BadRequestException('El "desde" no puede ser posterior al "hasta".');
+    throw new BadRequestException(
+      'El "desde" no puede ser posterior al "hasta".',
+    );
   }
 
   const since = from ? utcLiteral(startOfDay(from)) : undefined;

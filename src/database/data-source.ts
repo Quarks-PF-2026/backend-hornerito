@@ -20,7 +20,10 @@ import { VolunteerRequest } from '../modules/volunteering/entities/volunteer-req
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
-  url: process.env.DATABASE_URL,
+  // Mismo endpoint directo que usa la app (ver app.module.ts): las migraciones
+  // crean roles y policies, y no tiene sentido que corran por un pooler que no
+  // preserva el estado de sesion.
+  url: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL,
   schema: 'public',
   entities: [
     User,

@@ -56,10 +56,10 @@ describe('QK-23 · Historial de donaciones filtrado por el backend (e2e)', () =>
 
   /** Mueve una donación a un instante concreto, en UTC. */
   async function backdate(id: string, instantUtc: string): Promise<void> {
-    await dataSource.query(`UPDATE donations SET "createdAt" = $1 WHERE id = $2`, [
-      instantUtc,
-      id,
-    ]);
+    await dataSource.query(
+      `UPDATE donations SET "createdAt" = $1 WHERE id = $2`,
+      [instantUtc, id],
+    );
   }
 
   async function createInPerson(): Promise<string> {

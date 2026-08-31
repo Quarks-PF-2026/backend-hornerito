@@ -5,21 +5,45 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { ObjectLiteral } from 'typeorm';
 import { MailService } from '../mail/mail.service';
-import { IUserRepository } from '../auth/repositories/user-repository.interface';
 import { User } from '../auth/entities/user.entity';
+import { TenantContextService } from '../tenant/tenant-context.service';
 import { OrganizationInvitation } from './entities/organization-invitation.entity';
 import {
   OrganizationMembership,
   OrganizationMembershipRole,
 } from './entities/organization-membership.entity';
+import { Organization } from './entities/organization.entity';
 import { MemberService } from './member.service';
-import { IOrganizationInvitationRepository } from './repositories/organization-invitation-repository.interface';
-import { IOrganizationMembershipRepository } from './repositories/organization-membership-repository.interface';
-import { IOrganizationRepository } from './repositories/organization-repository.interface';
 
 const ORG_ID = 'org-1';
 const ADMIN_ID = 'admin-1';
+
+/**
+ * `MemberService` arma sus repositorios al vuelo sobre el manager del tenant,
+ * así que el doble tiene que resolver por entidad: un solo repo genérico haría
+ * que `invite` leyera invitaciones donde busca usuarios.
+ */
+type RepoMock = {
+  find: jest.Mock;
+  findBy: jest.Mock;
+  findOneBy: jest.Mock;
+  create: jest.Mock;
+  save: jest.Mock;
+  delete: jest.Mock;
+};
+
+function makeRepoMock(): RepoMock {
+  return {
+    find: jest.fn().mockResolvedValue([]),
+    findBy: jest.fn().mockResolvedValue([]),
+    findOneBy: jest.fn().mockResolvedValue(null),
+    create: jest.fn((entity: ObjectLiteral) => entity),
+    save: jest.fn((entity: ObjectLiteral) => Promise.resolve(entity)),
+    delete: jest.fn().mockResolvedValue({ affected: 1 }),
+  };
+}
 
 function makeMembership(
   overrides: Partial<OrganizationMembership> = {},
@@ -46,58 +70,50 @@ function makeUser(overrides: Partial<User> = {}): User {
 
 describe('MemberService', () => {
   let service: MemberService;
-  let membershipRepo: jest.Mocked<IOrganizationMembershipRepository>;
-  let invitationRepo: jest.Mocked<IOrganizationInvitationRepository>;
-  let organizationRepo: jest.Mocked<IOrganizationRepository>;
-  let userRepo: jest.Mocked<IUserRepository>;
+  let membershipRepo: RepoMock;
+  let invitationRepo: RepoMock;
+  let organizationRepo: RepoMock;
+  let userRepo: RepoMock;
   let mail: jest.Mocked<MailService>;
 
   beforeEach(() => {
-    membershipRepo = {
-      findByUserId: jest.fn(),
-      findByUserAndOrganization: jest.fn(),
-      findByOrganizationId: jest.fn().mockResolvedValue([]),
-      create: jest.fn(),
-      save: jest.fn().mockImplementation((m: unknown) => Promise.resolve(m)),
-    };
-    invitationRepo = {
-      findPendingByOrganization: jest.fn().mockResolvedValue([]),
-      findPendingByToken: jest.fn(),
-      findPendingByEmail: jest.fn().mockResolvedValue(null),
-      findById: jest.fn(),
-      create: jest
-        .fn()
-        .mockImplementation((invitation: Partial<OrganizationInvitation>) =>
-          Promise.resolve({
-            id: 'invitation-1',
-            createdAt: new Date(),
-            ...invitation,
-          } as OrganizationInvitation),
-        ),
-      save: jest.fn(),
-      deleteById: jest.fn(),
-    };
-    organizationRepo = {
-      findById: jest.fn().mockResolvedValue({ id: ORG_ID, name: 'ONG Sur' }),
-      findByIds: jest.fn(),
-      save: jest.fn(),
-      deleteById: jest.fn(),
-    };
-    userRepo = {
-      findById: jest.fn(),
-      findByIds: jest.fn().mockResolvedValue([makeUser()]),
-      findByEmail: jest.fn().mockResolvedValue(null),
-      findByVerificationToken: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-    };
+    membershipRepo = makeRepoMock();
+    invitationRepo = makeRepoMock();
+    organizationRepo = makeRepoMock();
+    userRepo = makeRepoMock();
+
+    organizationRepo.findOneBy.mockResolvedValue({
+      id: ORG_ID,
+      name: 'ONG Sur',
+    });
+    userRepo.findBy.mockResolvedValue([makeUser()]);
+    invitationRepo.save.mockImplementation(
+      (invitation: Partial<OrganizationInvitation>) =>
+        Promise.resolve({
+          id: 'invitation-1',
+          createdAt: new Date(),
+          ...invitation,
+        } as OrganizationInvitation),
+    );
+
+    const repos = new Map<unknown, RepoMock>([
+      [OrganizationMembership, membershipRepo],
+      [OrganizationInvitation, invitationRepo],
+      [Organization, organizationRepo],
+      [User, userRepo],
+    ]);
+
     mail = { send: jest.fn() } as unknown as jest.Mocked<MailService>;
 
+    const tenantContext = {
+      organizationId: ORG_ID,
+      getManager: jest.fn().mockReturnValue({
+        getRepository: (entity: unknown) => repos.get(entity),
+      }),
+    } as unknown as jest.Mocked<TenantContextService>;
+
     service = new MemberService(
-      membershipRepo,
-      invitationRepo,
-      organizationRepo,
-      userRepo,
+      tenantContext,
       mail,
       new ConfigService({ APP_BASE_URL: 'http://localhost:4200' }),
     );
@@ -105,7 +121,7 @@ describe('MemberService', () => {
 
   describe('list', () => {
     it('joins each membership with its user', async () => {
-      membershipRepo.findByOrganizationId.mockResolvedValue([makeMembership()]);
+      membershipRepo.find.mockResolvedValue([makeMembership()]);
 
       const result = await service.list(ORG_ID);
 
@@ -123,9 +139,7 @@ describe('MemberService', () => {
 
   describe('changeRole', () => {
     it('persists the new role', async () => {
-      membershipRepo.findByUserAndOrganization.mockResolvedValue(
-        makeMembership(),
-      );
+      membershipRepo.findOneBy.mockResolvedValue(makeMembership());
 
       const result = await service.changeRole(
         ORG_ID,
@@ -143,7 +157,7 @@ describe('MemberService', () => {
     });
 
     it('refuses to touch the organization owner', async () => {
-      membershipRepo.findByUserAndOrganization.mockResolvedValue(
+      membershipRepo.findOneBy.mockResolvedValue(
         makeMembership({ role: OrganizationMembershipRole.OWNER }),
       );
 
@@ -167,11 +181,11 @@ describe('MemberService', () => {
           OrganizationMembershipRole.VOLUNTEER,
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(membershipRepo.findByUserAndOrganization).not.toHaveBeenCalled();
+      expect(membershipRepo.findOneBy).not.toHaveBeenCalled();
     });
 
     it('rejects a user that does not belong to the organization', async () => {
-      membershipRepo.findByUserAndOrganization.mockResolvedValue(null);
+      membershipRepo.findOneBy.mockResolvedValue(null);
 
       await expect(
         service.changeRole(
@@ -186,7 +200,7 @@ describe('MemberService', () => {
 
   describe('toggleActive', () => {
     it('flips the active flag', async () => {
-      membershipRepo.findByUserAndOrganization.mockResolvedValue(
+      membershipRepo.findOneBy.mockResolvedValue(
         makeMembership({ active: true }),
       );
 
@@ -212,7 +226,7 @@ describe('MemberService', () => {
         role: OrganizationMembershipRole.COORDINATOR,
       });
 
-      expect(invitationRepo.create).toHaveBeenCalledWith(
+      expect(invitationRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           organizationId: ORG_ID,
           email: 'juan@example.com',
@@ -229,10 +243,8 @@ describe('MemberService', () => {
     });
 
     it('rejects a user that is already a member', async () => {
-      userRepo.findByEmail.mockResolvedValue(makeUser());
-      membershipRepo.findByUserAndOrganization.mockResolvedValue(
-        makeMembership(),
-      );
+      userRepo.findOneBy.mockResolvedValue(makeUser());
+      membershipRepo.findOneBy.mockResolvedValue(makeMembership());
 
       await expect(
         service.invite(ORG_ID, ADMIN_ID, {
@@ -244,9 +256,7 @@ describe('MemberService', () => {
     });
 
     it('rejects a duplicate pending invitation', async () => {
-      invitationRepo.findPendingByEmail.mockResolvedValue(
-        {} as OrganizationInvitation,
-      );
+      invitationRepo.findOneBy.mockResolvedValue({});
 
       await expect(
         service.invite(ORG_ID, ADMIN_ID, {
@@ -259,15 +269,15 @@ describe('MemberService', () => {
 
   describe('cancelInvitation', () => {
     it('refuses to cancel an invitation of another organization', async () => {
-      invitationRepo.findById.mockResolvedValue({
+      invitationRepo.findOneBy.mockResolvedValue({
         id: 'invitation-1',
         organizationId: 'other-org',
-      } as OrganizationInvitation);
+      });
 
       await expect(
         service.cancelInvitation(ORG_ID, 'invitation-1'),
       ).rejects.toThrow(NotFoundException);
-      expect(invitationRepo.deleteById).not.toHaveBeenCalled();
+      expect(invitationRepo.delete).not.toHaveBeenCalled();
     });
   });
 });
