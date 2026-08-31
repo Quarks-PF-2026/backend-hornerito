@@ -123,9 +123,11 @@ export class OrganizationService {
           paymentHolder: dto.paymentHolder?.trim() || null,
           paymentCuit: dto.paymentCuit?.trim() || null,
           paymentBank: dto.paymentBank?.trim() || null,
-          // Toda organización nace pendiente de validación (default de la
-          // entidad); un platform admin la valida o rechaza vía
-          // `/admin/organizations` (ver AdminOrganizationService).
+          // Hasta que exista el panel administrativo, toda organización nace
+          // validada. Cuando el panel esté, sacar esta línea y volver al
+          // default `pending` de la entidad: un platform admin la valida o
+          // rechaza vía `/admin/organizations` (ver AdminOrganizationService).
+          status: OrganizationStatus.VALIDATED,
         }),
       );
       await manager.save(
