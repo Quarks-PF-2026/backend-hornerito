@@ -13,6 +13,7 @@ import { MediaModule } from './modules/media/media.module';
 import { NeedModule } from './modules/need/need.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { PostModule } from './modules/post/post.module';
+import { ProfileModule } from './modules/profile/profile.module';
 import { PublicModule } from './modules/public/public.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { TenantModule } from './modules/tenant/tenant.module';
@@ -69,6 +70,7 @@ import { VolunteeringModule } from './modules/volunteering/volunteering.module';
     MailModule,
     TenantModule,
     AuthModule,
+    ProfileModule,
     OrganizationModule,
     SupplyModule,
     NeedModule,

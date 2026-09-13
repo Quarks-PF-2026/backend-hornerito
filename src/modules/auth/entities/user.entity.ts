@@ -17,6 +17,11 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  // Perfil (QK-11): dato editable por el propio usuario, fuera del alcance
+  // de la organización — por eso vive en la tabla global, no en la membresía.
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  phone: string | null;
+
   @Column()
   passwordHash: string;
 
