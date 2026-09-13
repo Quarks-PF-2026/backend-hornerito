@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Organization } from '../entities/organization.entity';
+import {
+  Organization,
+  OrganizationStatus,
+} from '../entities/organization.entity';
 import { IOrganizationRepository } from './organization-repository.interface';
 
 @Injectable()
@@ -20,6 +23,25 @@ export class TypeOrmOrganizationRepository implements IOrganizationRepository {
       return Promise.resolve([]);
     }
     return this.repo.findBy({ id: In(ids) });
+  }
+
+  findPending(): Promise<Organization[]> {
+    return this.repo.find({
+      where: { status: OrganizationStatus.PENDING },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async transitionFromPending(
+    id: string,
+    status: OrganizationStatus,
+    rejectReason: string | null,
+  ): Promise<boolean> {
+    const result = await this.repo.update(
+      { id, status: OrganizationStatus.PENDING },
+      { status, rejectReason },
+    );
+    return (result.affected ?? 0) > 0;
   }
 
   save(organization: Organization): Promise<Organization> {
