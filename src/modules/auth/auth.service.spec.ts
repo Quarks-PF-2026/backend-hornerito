@@ -23,6 +23,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     id: 'user-1',
     name: 'María González',
     email: 'maria@example.com',
+    phone: null,
     passwordHash: 'hashed',
     emailVerified: false,
     isPlatformAdmin: false,

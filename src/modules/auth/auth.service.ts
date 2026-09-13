@@ -35,7 +35,13 @@ export interface RegisterResult {
 
 export interface LoginResult {
   accessToken: string;
-  user: { id: string; name: string; email: string; isPlatformAdmin: boolean };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    isPlatformAdmin: boolean;
+  };
   role: OrganizationMembershipRole | null;
 }
 
@@ -205,6 +211,9 @@ export class AuthService {
         id: user.id,
         name: user.name,
         email: user.email,
+        // QK-11: trivial de agregar acá y evita que el front tenga que pegarle
+        // a /profile solo para mostrar el teléfono después de loguear.
+        phone: user.phone,
         isPlatformAdmin: user.isPlatformAdmin,
       },
       role: role ?? null,
