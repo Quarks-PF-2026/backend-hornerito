@@ -42,7 +42,7 @@ describe('QK-13 Administrar Organización (e2e)', () => {
     await app.close();
   });
 
-  it('CP-13-01: carga la organización y queda validada', async () => {
+  it('CP-13-01: carga la organización y queda pendiente de validación', async () => {
     const email = uniqueEmail('qk13-01');
     emails.push(email);
     const session = await registerAndLogin(app, email);
@@ -61,9 +61,9 @@ describe('QK-13 Administrar Organización (e2e)', () => {
     const org = res.body as { id: string; status: string };
     orgIds.push(org.id);
 
-    // Sin panel administrativo, la organización se autovalida al crearse.
-    // Cuando exista el panel, volver a esperar "pending" (PDF QK-13).
-    expect(org.status).toBe('validated');
+    // El panel de QK-19 ya existe: la organización nace pendiente y la
+    // valida un platform admin vía `/admin/organizations/:id/validate`.
+    expect(org.status).toBe('pending');
   });
 
   it('CP-13-02: la edición de datos se refleja en el perfil público', async () => {

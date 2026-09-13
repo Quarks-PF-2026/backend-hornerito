@@ -63,6 +63,8 @@ describe('InvitationService', () => {
     organizationRepo = {
       findById: jest.fn().mockResolvedValue({ id: 'org-1', name: 'ONG Sur' }),
       findByIds: jest.fn(),
+      findPending: jest.fn(),
+      transitionFromPending: jest.fn(),
       save: jest.fn(),
       deleteById: jest.fn(),
     };
@@ -71,6 +73,7 @@ describe('InvitationService', () => {
       findByIds: jest.fn(),
       findByEmail: jest.fn().mockResolvedValue(null),
       findByVerificationToken: jest.fn(),
+      findByResetPasswordToken: jest.fn(),
       create: jest
         .fn()
         .mockImplementation((user: Partial<User>) =>

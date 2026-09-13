@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -12,13 +13,18 @@ import { RejectOrganizationDto } from './dto/reject-organization.dto';
 import { OrganizationService } from './organization.service';
 
 /**
- * Panel de un platform admin (ver PlatformAdminGuard) para validar/rechazar
- * organizaciones — QK-13, CP-13-04 y CP-13-05.
+ * Panel de un platform admin (ver PlatformAdminGuard) para revisar y
+ * validar/rechazar organizaciones — QK-19.
  */
 @Controller('admin/organizations')
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 export class AdminOrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
+
+  @Get('pending')
+  listPending() {
+    return this.organizationService.listPendingOrganizations();
+  }
 
   @Patch(':id/validate')
   validate(@Param('id', ParseUUIDPipe) id: string) {

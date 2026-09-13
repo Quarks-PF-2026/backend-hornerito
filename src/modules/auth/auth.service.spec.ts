@@ -245,7 +245,12 @@ describe('AuthService', () => {
       });
       expect(result).toEqual({
         accessToken: 'signed-jwt',
-        user: { id: user.id, name: user.name, email: user.email },
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          isPlatformAdmin: false,
+        },
         role: null,
       });
     });

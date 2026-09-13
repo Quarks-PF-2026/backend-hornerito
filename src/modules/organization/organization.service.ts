@@ -1,9 +1,12 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -23,14 +26,38 @@ import type { IOrganizationRepository } from './repositories/organization-reposi
 import { ORGANIZATION_REPOSITORY } from './repositories/organization-repository.interface';
 import type { IOrganizationMembershipRepository } from './repositories/organization-membership-repository.interface';
 import { ORGANIZATION_MEMBERSHIP_REPOSITORY } from './repositories/organization-membership-repository.interface';
+import type { IUserRepository } from '../auth/repositories/user-repository.interface';
+import { USER_REPOSITORY } from '../auth/repositories/user-repository.interface';
+import { MailService } from '../mail/mail.service';
+import {
+  organizationRejectedMail,
+  organizationValidatedMail,
+} from '../mail/templates';
+
+/** Fila de la cola de organizaciones pendientes (QK-19). */
+export interface PendingOrganizationView {
+  id: string;
+  name: string;
+  description: string;
+  address: string;
+  contact: string;
+  createdAt: string;
+  owner: { name: string; email: string };
+}
 
 @Injectable()
 export class OrganizationService {
+  private readonly logger = new Logger(OrganizationService.name);
+
   constructor(
     @Inject(ORGANIZATION_REPOSITORY)
     private readonly organizationRepository: IOrganizationRepository,
     @Inject(ORGANIZATION_MEMBERSHIP_REPOSITORY)
     private readonly membershipRepository: IOrganizationMembershipRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: IUserRepository,
+    private readonly mail: MailService,
+    private readonly config: ConfigService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -123,11 +150,8 @@ export class OrganizationService {
           paymentHolder: dto.paymentHolder?.trim() || null,
           paymentCuit: dto.paymentCuit?.trim() || null,
           paymentBank: dto.paymentBank?.trim() || null,
-          // Hasta que exista el panel administrativo, toda organización nace
-          // validada. Cuando el panel esté, sacar esta línea y volver al
-          // default `pending` de la entidad: un platform admin la valida o
-          // rechaza vía `/admin/organizations` (ver AdminOrganizationService).
-          status: OrganizationStatus.VALIDATED,
+          // Nace `pending` (default de la entidad): un platform admin la
+          // valida o rechaza vía `/admin/organizations` (QK-19).
         }),
       );
       await manager.save(
@@ -148,20 +172,66 @@ export class OrganizationService {
     });
   }
 
-  /** Usado por un platform admin (QK-13 CP-13-04). */
-  async validate(organizationId: string): Promise<Organization> {
-    const organization = await this.requireOrganization(organizationId);
-    organization.status = OrganizationStatus.VALIDATED;
-    organization.rejectReason = null;
-    return this.organizationRepository.save(organization);
+  /** Cola de postulaciones a revisar por un platform admin (QK-19). */
+  async listPendingOrganizations(): Promise<PendingOrganizationView[]> {
+    const organizations = await this.organizationRepository.findPending();
+    if (organizations.length === 0) {
+      return [];
+    }
+    const owners = await this.userRepository.findByIds(
+      organizations.map((organization) => organization.ownerId),
+    );
+    const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
+    return organizations.map((organization) => ({
+      id: organization.id,
+      name: organization.name,
+      description: organization.description,
+      address: organization.address,
+      contact: organization.contact,
+      createdAt: organization.createdAt.toISOString(),
+      owner: {
+        name: ownerById.get(organization.ownerId)?.name ?? '',
+        email: ownerById.get(organization.ownerId)?.email ?? '',
+      },
+    }));
   }
 
-  /** Usado por un platform admin (QK-13 CP-13-05). */
+  /** Usado por un platform admin (QK-19). */
+  async validate(organizationId: string): Promise<Organization> {
+    const saved = await this.transitionFromPending(
+      organizationId,
+      OrganizationStatus.VALIDATED,
+      null,
+      'Solo se puede validar una organización pendiente.',
+    );
+    await this.notifyOwner(saved, (ownerEmail) =>
+      organizationValidatedMail(
+        ownerEmail,
+        saved.name,
+        this.appUrl('/app/organizacion'),
+      ),
+    );
+    return saved;
+  }
+
+  /** Usado por un platform admin (QK-19). El motivo se guarda trimmeado. */
   async reject(organizationId: string, reason: string): Promise<Organization> {
-    const organization = await this.requireOrganization(organizationId);
-    organization.status = OrganizationStatus.REJECTED;
-    organization.rejectReason = reason;
-    return this.organizationRepository.save(organization);
+    const trimmedReason = reason.trim();
+    const saved = await this.transitionFromPending(
+      organizationId,
+      OrganizationStatus.REJECTED,
+      trimmedReason,
+      'Solo se puede rechazar una organización pendiente.',
+    );
+    await this.notifyOwner(saved, (ownerEmail) =>
+      organizationRejectedMail(
+        ownerEmail,
+        saved.name,
+        trimmedReason,
+        this.appUrl('/app/organizacion'),
+      ),
+    );
+    return saved;
   }
 
   private async requireOrganization(id: string): Promise<Organization> {
@@ -170,5 +240,71 @@ export class OrganizationService {
       throw new NotFoundException('La organización no existe.');
     }
     return organization;
+  }
+
+  /**
+   * UPDATE condicional (`pending` -> `status`) en vez de read-then-write:
+   * dos platform admins decidiendo la misma organización a la vez podían
+   * pisarse sin que ninguno viera un 409, y el owner terminaba recibiendo dos
+   * correos contradictorios. Sin locks ni transacción explícita (KISS): el
+   * propio UPDATE condicional ya es la sección atómica.
+   */
+  private async transitionFromPending(
+    id: string,
+    status: OrganizationStatus,
+    rejectReason: string | null,
+    conflictMessage: string,
+  ): Promise<Organization> {
+    const won = await this.organizationRepository.transitionFromPending(
+      id,
+      status,
+      rejectReason,
+    );
+    if (!won) {
+      // El UPDATE no afectó filas: puede ser que no exista (404) o que ya
+      // haya salido de `pending` (409). Una sola lectura extra, solo en el
+      // camino de error, alcanza para distinguirlos.
+      await this.requireOrganization(id);
+      throw new ConflictException(conflictMessage);
+    }
+    return this.requireOrganization(id);
+  }
+
+  private appUrl(path: string): string {
+    const baseUrl = this.config.get<string>(
+      'APP_BASE_URL',
+      'http://localhost:4200',
+    );
+    return `${baseUrl}${path}`;
+  }
+
+  /**
+   * El correo es un aviso posterior a una transición que ya quedó persistida:
+   * si el envío falla no tiene sentido devolver un error al platform admin
+   * (la validación/el rechazo ya son un hecho), así que se loguea y se sigue
+   * — mismo criterio que `VolunteerRequestService.trySend`.
+   */
+  private async notifyOwner(
+    organization: Organization,
+    buildMessage: (
+      ownerEmail: string,
+    ) => ReturnType<
+      typeof organizationValidatedMail | typeof organizationRejectedMail
+    >,
+  ): Promise<void> {
+    const owner = await this.userRepository.findById(organization.ownerId);
+    if (!owner) {
+      this.logger.error(
+        `No se encontró el owner ${organization.ownerId} de la organización ${organization.id} para notificarle la validación/rechazo.`,
+      );
+      return;
+    }
+    try {
+      await this.mail.send(buildMessage(owner.email));
+    } catch (error) {
+      this.logger.error(
+        `No se pudo enviar el correo de validación/rechazo de la organización ${organization.id} a ${owner.email}: ${String(error)}`,
+      );
+    }
   }
 }
