@@ -35,7 +35,13 @@ export interface RegisterResult {
 
 export interface LoginResult {
   accessToken: string;
-  user: { id: string; name: string; email: string };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    isPlatformAdmin: boolean;
+  };
   role: OrganizationMembershipRole | null;
 }
 
@@ -183,9 +189,11 @@ export class AuthService {
   }
 
   /**
-   * Firma el token de la sesión. El rol viaja en la respuesta (para que el
-   * frontend arme el menú) pero NO en el payload del JWT: la autorización lo
-   * relee de la base en cada request vía TenantGuard.
+   * Firma el token de la sesión. El rol y `isPlatformAdmin` viajan en la
+   * respuesta (para que el frontend arme el menú) pero NO en el payload del
+   * JWT: la autorización relee ambos de la base en cada request (TenantGuard
+   * y PlatformAdminGuard), para que una baja de rol o de admin de plataforma
+   * aplique sin esperar a que expire el token.
    */
   issueAccessToken(
     user: User,
@@ -199,7 +207,15 @@ export class AuthService {
     });
     return {
       accessToken,
-      user: { id: user.id, name: user.name, email: user.email },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        // QK-11: trivial de agregar acá y evita que el front tenga que pegarle
+        // a /profile solo para mostrar el teléfono después de loguear.
+        phone: user.phone,
+        isPlatformAdmin: user.isPlatformAdmin,
+      },
       role: role ?? null,
     };
   }

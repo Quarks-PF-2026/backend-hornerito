@@ -150,6 +150,45 @@ export function volunteerRequestRejectedMail(
   };
 }
 
+/** Aviso al referente: un platform admin validó su organización (QK-19). */
+export function organizationValidatedMail(
+  to: string,
+  organizationName: string,
+  url: string,
+): MailMessage {
+  return {
+    to,
+    subject: `${organizationName} fue validada en Hornerito`,
+    html: layout(
+      '¡Tu organización fue validada!',
+      `<p>Un administrador de la plataforma validó <strong>${esc(organizationName)}</strong>. Ya podés operar: recibir donaciones y mostrar tu ficha pública.</p>`,
+      { url, label: 'Ir a mi organización' },
+    ),
+    text: `${organizationName} fue validada en Hornerito. Ya podés operar: ${url}`,
+  };
+}
+
+/** Rechazo de la postulación de una organización, siempre con motivo (QK-19). */
+export function organizationRejectedMail(
+  to: string,
+  organizationName: string,
+  reason: string,
+  url: string,
+): MailMessage {
+  return {
+    to,
+    subject: `Sobre la validación de ${organizationName}`,
+    html: layout(
+      'Tu organización no fue validada',
+      `<p>Un administrador de la plataforma revisó <strong>${esc(organizationName)}</strong> y por ahora no pudo validarla.</p>
+       <p style="background:#F6F1E9;border-radius:12px;padding:12px"><strong>Motivo:</strong> ${esc(reason)}</p>
+       <p>Podés corregir los datos desde tu perfil y quedar en revisión otra vez.</p>`,
+      { url, label: 'Revisar mi organización' },
+    ),
+    text: `${organizationName} no fue validada. Motivo: ${reason}`,
+  };
+}
+
 /** Los montos se muestran como los escribe la gente acá: $1.234,56. */
 function money(amount: number): string {
   return `$${amount.toLocaleString('es-AR', {

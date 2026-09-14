@@ -88,9 +88,19 @@ pending ──validar──> validated
 ```
 
 - **[CONFIRMADO]** La validación es **discrecional**: el administrador revisa que la organización exista y que sus datos sean creíbles, y decide. No hay checklist formal ni documentación obligatoria.
-- **[CONFIRMADO]** Una organización **rechazada puede volver a postularse**: corrige y vuelve a `pending`. El rechazo no es terminal.
-- Al rechazar se deja un motivo.
+- **[CONFIRMADO]** Una organización **rechazada puede volver a postularse**: corrige y vuelve a `pending`. El rechazo no es terminal. Vuelve a `pending` **únicamente cuando el `owner` corrige sus datos** (2026-09-13, QK-19).
+- **[CONFIRMADO]** Una organización **nace `pending`** (2026-09-13, QK-19).
 - **Una organización que no está `validated` no opera**: nada del plano de organización le funciona.
+
+### Validación (QK-19)
+
+Confirmado con el usuario el 2026-09-13.
+
+- **[CONFIRMADO]** **Cola de validación**: muestra **solo** organizaciones `pending`, ordenadas por fecha de solicitud, **la más antigua primero**. Por cada una: datos del perfil (nombre, descripción, dirección, contacto), el representante y la fecha de solicitud. No se exige documentación adjunta (consistente con la validación discrecional).
+- **[CONFIRMADO]** Solo se valida o rechaza una organización en `pending`.
+- **[CONFIRMADO]** Al rechazar se deja un motivo.
+- **[CONFIRMADO]** El **representante** es el `owner` de la organización. Se le avisa **por correo** tanto la aprobación como el rechazo; el aviso de rechazo incluye el motivo.
+- **[A DEFINIR]** Revocar una organización `validated`. Fuera del alcance de QK-19.
 
 ## 5. Cuentas y acceso
 
@@ -225,6 +235,12 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 | 5 | Media polimórfica usada solo para organización | También publicaciones e insumos (§9) |
 | 6 | Donante siempre sin cuenta | Con o sin cuenta (§3) |
 | 7 | Sin SMTP los correos van al log en vez de fallar | Degradación deliberada para desarrollo, pero un alta parece exitosa y el usuario nunca recibe el enlace |
+
+**Resueltas:**
+
+| # | Qué hacía el código | Qué pide el negocio | Resolución |
+|---|---|---|---|
+| R1 | Hasta QK-19, `createMine` creaba la organización ya `validated` (QK-13) | Nace `pending` y la valida el administrador de plataforma (§4) | QK-19 lo corrige: la organización nace `pending` |
 
 ## 14. Trazabilidad y proceso
 
