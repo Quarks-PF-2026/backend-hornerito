@@ -4,12 +4,57 @@ export interface GeocodeResult {
   label: string;
   lat: number;
   lon: number;
+  /** Localidad normalizada de la sugerencia (QK-112). */
+  locality: string | null;
+  province: string | null;
+  country: string | null;
+}
+
+interface NominatimAddress {
+  city?: string;
+  town?: string;
+  village?: string;
+  municipality?: string;
+  hamlet?: string;
+  suburb?: string;
+  state?: string;
+  country?: string;
 }
 
 interface NominatimItem {
   display_name?: string;
   lat?: string;
   lon?: string;
+  address?: NominatimAddress;
+}
+
+/**
+ * Nominatim no tiene un campo "localidad": según el tamaño del lugar lo
+ * devuelve como `city`, `town`, `village` o `municipality`. El orden va de
+ * mayor a menor para que una sugerencia dentro de una ciudad grande no
+ * termine identificada por su barrio. `suburb` queda último, como red de
+ * seguridad: mejor un barrio que nada.
+ */
+const LOCALITY_KEYS = [
+  'city',
+  'town',
+  'village',
+  'municipality',
+  'hamlet',
+  'suburb',
+] as const;
+
+function localityOf(address: NominatimAddress | undefined): string | null {
+  if (!address) {
+    return null;
+  }
+  for (const key of LOCALITY_KEYS) {
+    const value = address[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
 }
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
@@ -49,7 +94,9 @@ export class GeocodingService {
   }
 
   private async fetchFromNominatim(q: string): Promise<GeocodeResult[]> {
-    const url = `${NOMINATIM_URL}?format=json&limit=5&countrycodes=ar&q=${encodeURIComponent(q)}`;
+    const url =
+      `${NOMINATIM_URL}?format=json&addressdetails=1&limit=5&countrycodes=ar` +
+      `&q=${encodeURIComponent(q)}`;
     try {
       const response = await fetch(url, {
         headers: { 'User-Agent': this.userAgent, 'Accept-Language': 'es' },
@@ -66,6 +113,9 @@ export class GeocodingService {
           label: item.display_name!,
           lat: Number(item.lat),
           lon: Number(item.lon),
+          locality: localityOf(item.address),
+          province: item.address?.state?.trim() || null,
+          country: item.address?.country?.trim() || null,
         }));
     } catch (error) {
       this.logger.warn(`Falló la búsqueda de dirección: ${String(error)}`);

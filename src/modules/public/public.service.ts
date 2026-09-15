@@ -30,6 +30,9 @@ export interface PublicOrgSummary {
   name: string;
   description: string;
   address: string;
+  /** Ubicación normalizada (QK-112). Null en las que todavía no la cargaron. */
+  locality: string | null;
+  province: string | null;
   logoUrl: string | null;
   coverUrl: string | null;
   openNeedsCount: number;
@@ -112,6 +115,8 @@ export class PublicService {
       .addSelect('o.name', 'name')
       .addSelect('o.description', 'description')
       .addSelect('o.address', 'address')
+      .addSelect('o.locality', 'locality')
+      .addSelect('o.province', 'province')
       .addSelect('COUNT(n.id)', 'openNeedsCount')
       // `::text` no es cosmético: node-pg no sabe parsear un array de un tipo
       // enum propio y devolvería el literal `{...}` de Postgres como string.
@@ -304,6 +309,8 @@ export class PublicService {
       name: organization.name,
       description: organization.description,
       address: organization.address,
+      locality: organization.locality,
+      province: organization.province,
       contact: organization.contact,
       logoUrl: images.get(id)?.logo ?? null,
       coverUrl: images.get(id)?.cover ?? null,
