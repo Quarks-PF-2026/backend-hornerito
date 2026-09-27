@@ -39,6 +39,11 @@ export interface PublicOrgSummary {
   categories: string[];
 }
 
+export interface PublicLocality {
+  locality: string;
+  province: string | null;
+}
+
 /**
  * Una necesidad abierta: ni cerrada a mano ni ya cubierta. Se repite en SQL
  * porque el feed público lo resuelve la base, no el service.
@@ -99,6 +104,10 @@ export class PublicService {
       );
     }
 
+    if (query.locality) {
+      base.andWhere('o.locality = :locality', { locality: query.locality });
+    }
+
     if (query.category) {
       base.andWhere(
         `EXISTS (
@@ -155,6 +164,24 @@ export class PublicService {
       page,
       pageSize,
     };
+  }
+
+  /**
+   * Localidades con al menos una organización validada, para el filtro del
+   * inicio (QK-109): el visitante solo elige entre las que dan resultados.
+   * ponytail: sin paginar; buscar/paginar si algún día son cientos.
+   */
+  listLocalities(): Promise<PublicLocality[]> {
+    return this.organizations
+      .createQueryBuilder('o')
+      .select('o.locality', 'locality')
+      .addSelect('o.province', 'province')
+      .distinct(true)
+      .where('o.status = :status', { status: OrganizationStatus.VALIDATED })
+      .andWhere('o.locality IS NOT NULL')
+      .orderBy('o.locality', 'ASC')
+      .addOrderBy('o.province', 'ASC')
+      .getRawMany<PublicLocality>();
   }
 
   /** Feed global de necesidades abiertas de organizaciones validadas. */

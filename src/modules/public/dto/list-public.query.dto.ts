@@ -25,6 +25,15 @@ export class ListPublicQueryDto {
   @MaxLength(40)
   category?: string;
 
+  /**
+   * Localidad exacta, como la devuelve `/public/localities` (QK-109). Igualdad
+   * y no ILIKE: sale siempre del geocoder (QK-112), así que viene escrita igual.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  locality?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

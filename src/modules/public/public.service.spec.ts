@@ -35,6 +35,7 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
     'addOrderBy',
     'limit',
     'offset',
+    'distinct',
   ]) {
     qb[method] = chain(method);
   }
@@ -129,6 +130,26 @@ describe('PublicService', () => {
       '(o.name ILIKE :q OR o.description ILIKE :q OR o.address ILIKE :q)',
       { q: '%comedor%' },
     ]);
+  });
+
+  it('filtra por localidad exacta', async () => {
+    const service = build({ rows: [] });
+    await service.listOrganizations({ locality: 'Villa María' });
+    expect(calls['andWhere:all']).toContainEqual([
+      'o.locality = :locality',
+      { locality: 'Villa María' },
+    ]);
+  });
+
+  it('las localidades salen solo de organizaciones validadas y con localidad', async () => {
+    const rows = [{ locality: 'Villa María', province: 'Córdoba' }];
+    const service = build({ rows });
+    await expect(service.listLocalities()).resolves.toEqual(rows);
+    expect(calls.where).toEqual([
+      'o.status = :status',
+      { status: OrganizationStatus.VALIDATED },
+    ]);
+    expect(calls.andWhere).toEqual(['o.locality IS NOT NULL']);
   });
 
   it('no expone una organización que no está validada', async () => {
