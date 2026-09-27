@@ -148,6 +148,22 @@ describe('PublicService', () => {
     );
   });
 
+  it('con withinDays pide solo las que vencen entre hoy y hoy + N, en fecha de Argentina', async () => {
+    const service = build({ rows: [] });
+    await service.listNeeds({ withinDays: 7 });
+    const today = `(now() AT TIME ZONE 'America/Argentina/Cordoba')::date`;
+    expect(calls['andWhere:all']).toContainEqual([
+      `n."deadline" BETWEEN ${today} AND ${today} + CAST(:withinDays AS int)`,
+      { withinDays: 7 },
+    ]);
+  });
+
+  it('sin withinDays no recorta por fecha', async () => {
+    const service = build({ rows: [] });
+    await service.listNeeds({});
+    expect(calls['andWhere:all']).toBeUndefined();
+  });
+
   it('en el detalle filtra por organización y necesidad abierta', async () => {
     const service = build({
       organization: {

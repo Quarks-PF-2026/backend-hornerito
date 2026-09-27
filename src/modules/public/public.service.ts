@@ -46,6 +46,12 @@ export interface PublicOrgSummary {
 const OPEN_NEED = `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"`;
 
 /**
+ * "Hoy" en Argentina. Neon y Vercel corren en UTC: con `CURRENT_DATE`, desde
+ * las 21 h locales "hoy" ya sería mañana y se perderían las que vencen hoy.
+ */
+const TODAY_AR = `(now() AT TIME ZONE 'America/Argentina/Cordoba')::date`;
+
+/**
  * El mismo criterio que `isOpportunityOpen`, pero en SQL: la ficha pública no
  * puede ofrecer para postularse una actividad cerrada, cancelada o sin cupos.
  * Vive acá y no duplicado en cada query para que las dos lecturas no se
@@ -173,6 +179,12 @@ export class PublicService {
       qb.andWhere('(s."name" ILIKE :q OR o.name ILIKE :q)', {
         q: `%${query.q}%`,
       });
+    }
+    if (query.withinDays) {
+      qb.andWhere(
+        `n."deadline" BETWEEN ${TODAY_AR} AND ${TODAY_AR} + CAST(:withinDays AS int)`,
+        { withinDays: query.withinDays },
+      );
     }
 
     const total = await qb.clone().getCount();
