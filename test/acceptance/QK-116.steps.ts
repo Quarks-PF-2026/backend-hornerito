@@ -1,4 +1,4 @@
-import { defineFeature, loadFeature } from 'jest-cucumber';
+import { defineFeature, loadFeature, DefineStepFunction } from 'jest-cucumber';
 import { usarMundo } from './support/world';
 
 const feature = loadFeature('./test/acceptance/QK-116.feature');
@@ -64,7 +64,7 @@ defineFeature(feature, (test) => {
     await mundo().unaOrganizacionValidada(alias);
   };
 
-  const antecedentes = (given: any, and: any) => {
+  const antecedentes = (given: DefineStepFunction, and: DefineStepFunction) => {
     given('que existe una organización con su responsable', async () => {
       await unaOrganizacion('usuario');
     });

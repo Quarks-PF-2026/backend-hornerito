@@ -51,10 +51,11 @@ export class TenantGuard implements CanActivate {
       // Un id mal formado (ej. un JWT armado a mano, o corrupto) no es "no
       // pertenece a la organización", pero tampoco debe filtrarse como 500:
       // Postgres rechaza el cast a uuid con un error crudo (22P02).
-      if (
-        error instanceof QueryFailedError &&
-        error.driverError?.code === '22P02'
-      ) {
+      const driverError =
+        error instanceof QueryFailedError
+          ? (error.driverError as { code?: string } | undefined)
+          : undefined;
+      if (driverError?.code === '22P02') {
         throw new ForbiddenException('No pertenecés a esa organización.');
       }
       throw error;

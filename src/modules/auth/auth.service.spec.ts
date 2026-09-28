@@ -250,6 +250,7 @@ describe('AuthService', () => {
           id: user.id,
           name: user.name,
           email: user.email,
+          phone: user.phone,
           isPlatformAdmin: false,
         },
         role: null,
@@ -395,8 +396,8 @@ describe('AuthService', () => {
 
       expect(repo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          resetPasswordToken: expect.any(String),
-          resetPasswordTokenExpiresAt: expect.any(Date),
+          resetPasswordToken: expect.any(String) as string,
+          resetPasswordTokenExpiresAt: expect.any(Date) as Date,
         }),
       );
       expect(resetMail.send).toHaveBeenCalledTimes(1);

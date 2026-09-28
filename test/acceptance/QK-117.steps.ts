@@ -45,7 +45,11 @@ defineFeature(feature, (test) => {
       .set('Authorization', mundo().auth(alias))
       .send(body);
 
-  const editarEvento = (alias: string, id: string, body: Record<string, unknown>) =>
+  const editarEvento = (
+    alias: string,
+    id: string,
+    body: Record<string, unknown>,
+  ) =>
     mundo()
       .http()
       .put(`/events/${id}`)
@@ -70,7 +74,12 @@ defineFeature(feature, (test) => {
       .query({ from, to })
       .set('Authorization', mundo().auth(alias));
 
-  const cargarAsistencia = (alias: string, id: string, date: string, count: number) =>
+  const cargarAsistencia = (
+    alias: string,
+    id: string,
+    date: string,
+    count: number,
+  ) =>
     mundo()
       .http()
       .put(`/events/${id}/attendance/${date}`)
@@ -78,10 +87,7 @@ defineFeature(feature, (test) => {
       .send({ count });
 
   const listarEventos = (alias: string) =>
-    mundo()
-      .http()
-      .get('/events')
-      .set('Authorization', mundo().auth(alias));
+    mundo().http().get('/events').set('Authorization', mundo().auth(alias));
 
   const guardarEvento = (nombre: string, body: EventoBody) =>
     mundo().datos.set(`evento:${nombre}`, body);
@@ -175,18 +181,21 @@ defineFeature(feature, (test) => {
       guardarEvento(nombre, body);
     });
 
-    and('hay una única ocurrencia disponible, en esa fecha puntual', async () => {
-      const evento = eventoGuardado('Colecta de invierno');
-      const res = await listarOcurrencias(
-        'usuario',
-        evento.id,
-        evento.startDate,
-        evento.startDate,
-      );
-      expect(res.status).toBe(200);
-      const ocurrencias = res.body as Ocurrencia[];
-      expect(ocurrencias).toEqual([{ date: evento.startDate, count: null }]);
-    });
+    and(
+      'hay una única ocurrencia disponible, en esa fecha puntual',
+      async () => {
+        const evento = eventoGuardado('Colecta de invierno');
+        const res = await listarOcurrencias(
+          'usuario',
+          evento.id,
+          evento.startDate,
+          evento.startDate,
+        );
+        expect(res.status).toBe(200);
+        const ocurrencias = res.body as Ocurrencia[];
+        expect(ocurrencias).toEqual([{ date: evento.startDate, count: null }]);
+      },
+    );
   });
 
   test('Editar el nombre de un evento sin asistencia registrada', ({
@@ -243,15 +252,18 @@ defineFeature(feature, (test) => {
       },
     );
 
-    and(/^que se cargó la asistencia de hace (\d+) días$/, async (dias: string) => {
-      const evento = eventoGuardado('Merienda diaria');
-      await cargarAsistencia(
-        'usuario',
-        evento.id,
-        sumarDias(hoy(), -Number(dias)),
-        7,
-      ).expect(200);
-    });
+    and(
+      /^que se cargó la asistencia de hace (\d+) días$/,
+      async (dias: string) => {
+        const evento = eventoGuardado('Merienda diaria');
+        await cargarAsistencia(
+          'usuario',
+          evento.id,
+          sumarDias(hoy(), -Number(dias)),
+          7,
+        ).expect(200);
+      },
+    );
 
     when('el responsable da de baja el evento', async () => {
       const evento = eventoGuardado('Merienda diaria');
@@ -266,22 +278,25 @@ defineFeature(feature, (test) => {
       guardarEvento('Merienda diaria', body);
     });
 
-    and('las ocurrencias y la asistencia ya registradas siguen disponibles', async () => {
-      const evento = eventoGuardado('Merienda diaria');
-      const res = await listarOcurrencias(
-        'usuario',
-        evento.id,
-        evento.startDate,
-        hoy(),
-      );
-      expect(res.status).toBe(200);
-      const ocurrencias = res.body as Ocurrencia[];
-      const conAsistencia = ocurrencias.find(
-        (o) => o.date === sumarDias(hoy(), -2),
-      );
-      expect(conAsistencia?.count).toBe(7);
-      expect(ocurrencias.every((o) => o.date <= hoy())).toBe(true);
-    });
+    and(
+      'las ocurrencias y la asistencia ya registradas siguen disponibles',
+      async () => {
+        const evento = eventoGuardado('Merienda diaria');
+        const res = await listarOcurrencias(
+          'usuario',
+          evento.id,
+          evento.startDate,
+          hoy(),
+        );
+        expect(res.status).toBe(200);
+        const ocurrencias = res.body as Ocurrencia[];
+        const conAsistencia = ocurrencias.find(
+          (o) => o.date === sumarDias(hoy(), -2),
+        );
+        expect(conAsistencia?.count).toBe(7);
+        expect(ocurrencias.every((o) => o.date <= hoy())).toBe(true);
+      },
+    );
 
     and('ya no se puede cargar la asistencia de mañana', async () => {
       const evento = eventoGuardado('Merienda diaria');
@@ -427,12 +442,15 @@ defineFeature(feature, (test) => {
       await cargarAsistencia('usuario', evento.id, hoy(), 5).expect(200);
     });
 
-    when('el responsable intenta cambiarle el tipo a extraordinario', async () => {
-      const evento = eventoGuardado('Merienda diaria');
-      mundo().respuesta = await editarEvento('usuario', evento.id, {
-        kind: 'one_off',
-      });
-    });
+    when(
+      'el responsable intenta cambiarle el tipo a extraordinario',
+      async () => {
+        const evento = eventoGuardado('Merienda diaria');
+        mundo().respuesta = await editarEvento('usuario', evento.id, {
+          kind: 'one_off',
+        });
+      },
+    );
 
     then('el sistema no se lo permite', () => {
       expect(mundo().ultimaRespuesta().status).toBe(409);

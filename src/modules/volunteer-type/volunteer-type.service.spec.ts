@@ -28,7 +28,7 @@ describe('VolunteerTypeService', () => {
       findOne: jest.fn(),
       findOneBy: jest.fn(),
       create: jest.fn((data) => data as VolunteerType),
-      save: jest.fn(async (entity) => entity as VolunteerType),
+      save: jest.fn((entity) => Promise.resolve(entity as VolunteerType)),
     } as unknown as jest.Mocked<Repository<VolunteerType>>;
     tenantContext = {
       organizationId: 'org-1',

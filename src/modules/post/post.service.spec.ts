@@ -27,7 +27,7 @@ describe('PostService', () => {
       find: jest.fn(),
       findOneBy: jest.fn(),
       create: jest.fn((data) => data as Post),
-      save: jest.fn(async (entity) => entity as Post),
+      save: jest.fn((entity) => Promise.resolve(entity as Post)),
       delete: jest.fn(),
     } as unknown as jest.Mocked<Repository<Post>>;
     tenantContext = {

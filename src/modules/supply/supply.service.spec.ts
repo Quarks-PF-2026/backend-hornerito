@@ -30,7 +30,7 @@ describe('SupplyService', () => {
       findOne: jest.fn(),
       findOneBy: jest.fn(),
       create: jest.fn((data) => data as Supply),
-      save: jest.fn(async (entity) => entity as Supply),
+      save: jest.fn((entity) => Promise.resolve(entity as Supply)),
     } as unknown as jest.Mocked<Repository<Supply>>;
     tenantContext = {
       organizationId: 'org-1',
