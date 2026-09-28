@@ -1,4 +1,4 @@
-import { defineFeature, loadFeature } from 'jest-cucumber';
+import { defineFeature, loadFeature, DefineStepFunction } from 'jest-cucumber';
 import { usarMundo } from './support/world';
 
 const feature = loadFeature('./test/acceptance/QK-109.feature');
@@ -44,15 +44,18 @@ defineFeature(feature, (test) => {
     const propias = new Set(
       ['villa', 'rio', 'sin'].map((alias) => mundo().datos.get(alias)),
     );
-    return (res.body.items as OrgResumen[]).filter((org) => propias.has(org.id));
+    const body = res.body as { items: OrgResumen[] };
+    return body.items.filter((org) => propias.has(org.id));
   };
 
-  const antecedentes = (given: any, and: any) => {
-    given(/^que existe una organización validada en "(.*)"$/, (localidad: string) =>
-      unaOrganizacionEn('villa', localidad),
+  const antecedentes = (given: DefineStepFunction, and: DefineStepFunction) => {
+    given(
+      /^que existe una organización validada en "(.*)"$/,
+      (localidad: string) => unaOrganizacionEn('villa', localidad),
     );
-    and(/^que existe otra organización validada en "(.*)"$/, (localidad: string) =>
-      unaOrganizacionEn('rio', localidad),
+    and(
+      /^que existe otra organización validada en "(.*)"$/,
+      (localidad: string) => unaOrganizacionEn('rio', localidad),
     );
     and('que existe una organización validada sin localidad', () =>
       unaOrganizacionEn('sin', null),
@@ -63,9 +66,12 @@ defineFeature(feature, (test) => {
     antecedentes(given, and);
     let vistas: OrgResumen[] = [];
 
-    when(/^el visitante filtra el inicio por "(.*)"$/, async (localidad: string) => {
-      vistas = await listar({ locality: localidad });
-    });
+    when(
+      /^el visitante filtra el inicio por "(.*)"$/,
+      async (localidad: string) => {
+        vistas = await listar({ locality: localidad });
+      },
+    );
 
     then(/^solo ve la organización de "(.*)"$/, (localidad: string) => {
       expect(vistas.map((org) => org.id)).toEqual([mundo().datos.get('villa')]);
@@ -81,10 +87,13 @@ defineFeature(feature, (test) => {
       vistas = await listar({});
     });
 
-    then('ve las tres organizaciones, también la que no tiene localidad', () => {
-      expect(vistas).toHaveLength(3);
-      expect(vistas.map((org) => org.id)).toContain(mundo().datos.get('sin'));
-    });
+    then(
+      've las tres organizaciones, también la que no tiene localidad',
+      () => {
+        expect(vistas).toHaveLength(3);
+        expect(vistas.map((org) => org.id)).toContain(mundo().datos.get('sin'));
+      },
+    );
   });
 
   test('Solo se ofrecen localidades de organizaciones validadas', ({
@@ -96,13 +105,16 @@ defineFeature(feature, (test) => {
     antecedentes(given, and);
     let localidades: string[] = [];
 
-    given(/^que existe una organización pendiente en "(.*)"$/, async (localidad: string) => {
-      await unaOrganizacionEn('pendiente', localidad);
-      await mundo().dataSource.query(
-        `UPDATE organizations SET status = 'pending' WHERE id = $1`,
-        [mundo().datos.get('pendiente')],
-      );
-    });
+    given(
+      /^que existe una organización pendiente en "(.*)"$/,
+      async (localidad: string) => {
+        await unaOrganizacionEn('pendiente', localidad);
+        await mundo().dataSource.query(
+          `UPDATE organizations SET status = 'pending' WHERE id = $1`,
+          [mundo().datos.get('pendiente')],
+        );
+      },
+    );
 
     when('el visitante pide las localidades para filtrar', async () => {
       const res = await mundo().http().get('/public/localities').expect(200);

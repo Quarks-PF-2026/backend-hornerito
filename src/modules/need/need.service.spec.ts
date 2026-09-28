@@ -50,7 +50,7 @@ describe('NeedService', () => {
       find: jest.fn(),
       findOneBy: jest.fn(),
       create: jest.fn((data) => data as Need),
-      save: jest.fn(async (entity) => entity as Need),
+      save: jest.fn((entity) => Promise.resolve(entity as Need)),
     } as unknown as jest.Mocked<Repository<Need>>;
     supplyRepo = {
       findOneBy: jest.fn(),

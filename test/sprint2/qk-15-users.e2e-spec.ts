@@ -77,7 +77,6 @@ describe('QK-15 Administrar Usuarios (e2e)', () => {
   let orgId: string;
   let memberEmail: string;
   let memberUserId: string;
-  let memberToken: string;
   const orgIds: string[] = [];
   const emails: string[] = [];
 
@@ -103,7 +102,6 @@ describe('QK-15 Administrar Usuarios (e2e)', () => {
       'voluntario',
     );
     memberUserId = member.userId;
-    memberToken = member.token;
   });
 
   afterAll(async () => {
@@ -172,8 +170,6 @@ describe('QK-15 Administrar Usuarios (e2e)', () => {
       .get('/organization/members')
       .set('Authorization', `Bearer ${body.accessToken}`)
       .expect(200);
-
-    memberToken = body.accessToken;
   });
 
   it('CP-15-05: un usuario sin rol de administrador no accede a la sección', async () => {

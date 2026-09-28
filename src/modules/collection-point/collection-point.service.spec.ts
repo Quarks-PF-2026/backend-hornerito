@@ -73,7 +73,7 @@ describe('CollectionPointService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       findOneBy: jest.fn(),
       create: jest.fn((data) => data as CollectionPoint),
-      save: jest.fn(async (entity) => entity as CollectionPoint),
+      save: jest.fn((entity) => Promise.resolve(entity as CollectionPoint)),
     } as unknown as jest.Mocked<Repository<CollectionPoint>>;
     const tenantContext = {
       organizationId: 'org-1',
