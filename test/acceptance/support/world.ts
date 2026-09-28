@@ -25,6 +25,7 @@ import {
   cleanupOrganizations,
   cleanupUsers,
   registerAndLogin,
+  switchOrg,
   uniqueEmail,
   type Session,
 } from '../../sprint2/helpers';
@@ -114,7 +115,38 @@ export class MundoDeAceptacion {
     const org = await createOrganization(this.app, sesion.token, overrides);
     this.orgIdsCreadas.push(org.id);
     this.datos.set('organizationId', org.id);
+    // El token de `sesion` se emitió antes de que la organización existiera,
+    // así que todavía no trae `orgId` (el login solo lo completa si el
+    // usuario ya tiene una única membresía activa). Los endpoints scopeados
+    // a organización (TenantGuard) lo necesitan, así que refrescamos el
+    // token del alias al de "cambiar de organización" apenas se crea.
+    const token = await switchOrg(this.app, sesion.token, org.id);
+    this.sesiones.set(alias, { ...sesion, token });
     return org;
+  }
+
+  /**
+   * Da de alta un miembro con el rol dado en una organización ya creada,
+   * insertando la membresía directo en la base (como hace
+   * `test/sprint3/qk-33-volunteer-types.e2e-spec.ts`) y le entrega una
+   * sesión con el token ya scopeado a esa organización. Para escenarios de
+   * permisos: quién puede administrar según su rol.
+   */
+  async unMiembroConRol(
+    alias: string,
+    rol: 'admin' | 'coordinador' | 'voluntario',
+    organizationId: string,
+  ): Promise<Session> {
+    const base = await this.unUsuarioAutenticado(alias);
+    await this.dataSource.query(
+      `INSERT INTO organization_memberships ("userId", "organizationId", role, active)
+       VALUES ($1, $2, $3, true)`,
+      [base.userId, organizationId, rol],
+    );
+    const token = await switchOrg(this.app, base.token, organizationId);
+    const sesion: Session = { ...base, token };
+    this.sesiones.set(alias, sesion);
+    return sesion;
   }
 
   sesion(alias = 'usuario'): Session {

@@ -5,6 +5,8 @@ import { Donation } from '../modules/donation/entities/donation.entity';
 import { DonationItem } from '../modules/donation/entities/donation-item.entity';
 import { InPersonDonation } from '../modules/donation/entities/in-person-donation.entity';
 import { MonetaryDonation } from '../modules/donation/entities/monetary-donation.entity';
+import { EventAttendance } from '../modules/event/entities/event-attendance.entity';
+import { OrgEvent } from '../modules/event/entities/event.entity';
 import { Media } from '../modules/media/entities/media.entity';
 import { Need } from '../modules/need/entities/need.entity';
 import { Organization } from '../modules/organization/entities/organization.entity';
@@ -43,6 +45,8 @@ export const AppDataSource = new DataSource({
     InPersonDonation,
     MonetaryDonation,
     DonationItem,
+    OrgEvent,
+    EventAttendance,
   ],
   migrations: [__dirname + '/migrations/public/*{.ts,.js}'],
   migrationsTableName: 'migrations',

@@ -46,6 +46,9 @@ Plataforma web donde organizaciones sociales (comedores, merenderos, ONGs) publi
 | **Publicación** (*post*) | Novedad que la organización difunde. |
 | **Membresía** | Vínculo entre una persona y una organización, con un rol. |
 | **Invitación** | Token con vencimiento por el cual una organización suma a alguien. |
+| **Evento** | Ocasión de servicio de una organización: periódico (frecuencia diaria) o extraordinario (fecha puntual). Detalle en §16. |
+| **Ocurrencia** | Par (evento, fecha); instancia concreta de un evento. No se persiste. Detalle en §16. |
+| **Asistencia** | Conteo agregado de beneficiarios atendidos en una ocurrencia. Detalle en §16. |
 
 ## 3. Actores y roles
 
@@ -76,6 +79,8 @@ Una persona tiene un rol *por cada* organización a la que pertenece.
 | `admin` | Gestionar miembros e invitaciones, y todo el contenido. |
 | `coordinador` | Gestionar contenido. No gestiona miembros. |
 | `voluntario` | Solo lectura. |
+
+**[CONFIRMADO]** Excepción: el `voluntario` puede cargar y corregir la asistencia de un evento — es la única escritura que hace. Regla completa en §16.
 
 **[A DEFINIR]** Si existirá un **auditor o ente externo** con lectura ampliada respecto del visitante anónimo.
 
@@ -195,7 +200,7 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 
 1. Un dato pertenece a **una y solo una** organización.
 2. Una organización que no está `validated` **no opera**.
-3. Un `voluntario` **nunca escribe contenido**. **[PROVISORIO]**
+3. Un `voluntario` **nunca escribe contenido**. **[PROVISORIO]** — excepción confirmada: puede cargar/corregir asistencia de un evento (§16).
 4. El rol `owner` **no se asigna ni se transfiere**. **[PROVISORIO]**
 5. Una cuenta sin correo verificado **no inicia sesión**.
 6. Los permisos se revalidan en cada request; el token no es la fuente de verdad del rol.
@@ -207,6 +212,9 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 12. El directorio público muestra **solo** organizaciones `validated`.
 13. Un ítem de donación puede existir sin necesidad asociada.
 14. La difusión pública y la gestión interna **pesan igual**. **[CONFIRMADO]**
+15. Un evento **nunca se borra**; darlo de baja solo detiene sus ocurrencias futuras. **[CONFIRMADO]**
+16. Una ocurrencia tiene **a lo sumo una** asistencia; cargarla de nuevo la reemplaza. **[CONFIRMADO]**
+17. La asistencia **nunca se expone** en el directorio público ni en la ficha de organización. **[CONFIRMADO]**
 
 > Cayó la invariante "una donación no tiene estados": era una lectura del código, la reemplaza §7.
 > Las marcadas **[PROVISORIO]** dependen de la tabla de roles, que el equipo no dio por final.
@@ -275,3 +283,32 @@ feat(alcance): ... (QK-NN)      el cambio
 5. **Roles y permisos** — la tabla de §3 es provisoria; ¿cuál es la definitiva?
 6. **Imágenes** — quién puede subirlas, si hay moderación (§9)
 7. **Reglas acordadas y no implementadas** — relevar con el equipo completo si hay más allá de las 6 de §12
+8. **Plazo límite de corrección de asistencia** — por ahora ninguno (§16)
+
+## 16. Eventos y asistencia (QK-116, QK-117)
+
+Confirmado con el usuario el 2026-09-27.
+
+### Evento
+
+- **[CONFIRMADO]** Un **evento** es una ocasión de servicio de una organización. Dos tipos:
+  - **Periódico**: por ahora solo con frecuencia diaria (ej. la merienda).
+  - **Extraordinario**: una fecha puntual (ej. una colecta).
+- **[CONFIRMADO]** Crear, editar y dar de baja un evento: `owner`, `admin`, `coordinador`. El `voluntario` solo ve (§3).
+- **[CONFIRMADO]** Un evento **sin asistencia registrada** se edita libremente. Un evento **con asistencia registrada** solo permite cambiar el nombre (no el tipo ni la fecha de inicio) o darlo de baja.
+- **[CONFIRMADO]** Dar de baja un evento: deja de generar ocurrencias **desde el día siguiente**; las ocurrencias y asistencias pasadas se conservan. **Los eventos nunca se borran** (invariante 15, §11).
+
+### Ocurrencia
+
+- **[CONFIRMADO]** Una **ocurrencia** es el par (evento, fecha). **No se persiste**, se calcula:
+  - Periódico: una ocurrencia por cada día desde la fecha de inicio hasta hoy (o hasta la fecha de baja, si el evento fue dado de baja).
+  - Extraordinario: una única ocurrencia, en su fecha.
+
+### Asistencia
+
+- **[CONFIRMADO]** La **asistencia** es un conteo agregado (entero ≥ 0) de beneficiarios atendidos en una ocurrencia. **No es nominal**: no identifica personas.
+- **[CONFIRMADO]** Una asistencia por ocurrencia (invariante 16, §11). Cargarla de nuevo **la corrige**: reemplaza el valor anterior, no lo acumula.
+- **[CONFIRMADO]** Cargar o corregir una asistencia: **cualquier miembro activo de la organización**, `voluntario` incluido. Excepción explícita a "voluntario = solo lectura" (§3).
+- **[CONFIRMADO]** No se puede cargar asistencia en una **fecha futura**, ni en una fecha que no sea ocurrencia del evento.
+- **[NO CONFIRMADO]** Plazo límite de corrección de un conteo — por ahora ninguno.
+- **[CONFIRMADO]** La asistencia es **interna**: nunca se expone en el directorio público ni en la ficha de organización (invariante 17, §11). Es **independiente** del estado de las necesidades (§6). A futuro alimenta la predicción con IA de QK-118.

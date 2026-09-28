@@ -10,6 +10,7 @@ import {
 
 export const DEFAULT_PAGE_SIZE = 12;
 export const MAX_PAGE_SIZE = 24;
+export const MAX_WITHIN_DAYS = 30;
 
 export class ListPublicQueryDto {
   /** Texto libre: nombre, descripción o dirección de la organización. */
@@ -24,6 +25,15 @@ export class ListPublicQueryDto {
   @MaxLength(40)
   category?: string;
 
+  /**
+   * Localidad exacta, como la devuelve `/public/localities` (QK-109). Igualdad
+   * y no ILIKE: sale siempre del geocoder (QK-112), así que viene escrita igual.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  locality?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -36,4 +46,12 @@ export class ListPublicQueryDto {
   @Min(1)
   @Max(MAX_PAGE_SIZE)
   pageSize?: number;
+
+  /** Solo necesidades que vencen entre hoy y hoy + N días (QK-108). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_WITHIN_DAYS)
+  withinDays?: number;
 }

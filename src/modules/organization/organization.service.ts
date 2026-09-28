@@ -98,6 +98,7 @@ export class OrganizationService {
       if (dto.paymentBank !== undefined) {
         existing.paymentBank = dto.paymentBank.trim() || null;
       }
+      Object.assign(existing, this.locationOf(dto));
       if (existing.status === OrganizationStatus.REJECTED) {
         existing.status = OrganizationStatus.PENDING;
         existing.rejectReason = null;
@@ -115,6 +116,25 @@ export class OrganizationService {
     }
 
     return this.createMine(userId, dto);
+  }
+
+  /**
+   * El trío localidad/provincia/país viaja junto: sale de una sola sugerencia
+   * del geocoder (QK-112). Escribirlo campo por campo dejaría combinaciones
+   * que ninguna sugerencia produjo — localidad nueva con provincia vieja.
+   * `locality` es la llave del bloque: si no viene, la ubicación guardada no
+   * se toca, así que reenviar el perfil sin estos campos (el interruptor de
+   * voluntarios lo hace) no la borra.
+   */
+  private locationOf(dto: UpdateOrganizationDto): Partial<Organization> {
+    if (dto.locality === undefined) {
+      return {};
+    }
+    return {
+      locality: dto.locality.trim() || null,
+      province: dto.province?.trim() || null,
+      country: dto.country?.trim() || null,
+    };
   }
 
   async getOwnedOrganization(userId: string): Promise<Organization | null> {
@@ -150,6 +170,7 @@ export class OrganizationService {
           paymentHolder: dto.paymentHolder?.trim() || null,
           paymentCuit: dto.paymentCuit?.trim() || null,
           paymentBank: dto.paymentBank?.trim() || null,
+          ...this.locationOf(dto),
           // Nace `pending` (default de la entidad): un platform admin la
           // valida o rechaza vía `/admin/organizations` (QK-19).
         }),

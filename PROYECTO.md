@@ -32,6 +32,7 @@ Qué **no** va acá: reglas de trabajo (`CLAUDE.md`), reglas de negocio (`DOMAIN
 | Organizaciones y membresías | Implementado | Validación por admin de plataforma |
 | Insumos, necesidades, publicaciones, puntos | Implementado | ABM completo |
 | Donaciones presenciales | Implementado | QK-26 |
+| Eventos y asistencia | Implementado | QK-116, QK-117 — Sprint 5, pendiente validación PO |
 | Directorio público | Implementado | |
 | Frontend Angular + Ionic | En desarrollo | Todas las pantallas del backend cubiertas |
 | Tests backend | 116 unit + 38 integración | Sin escenarios de aceptación todavía |

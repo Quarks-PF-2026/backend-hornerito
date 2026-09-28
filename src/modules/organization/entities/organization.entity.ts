@@ -63,6 +63,21 @@ export class Organization {
   @Column({ type: 'varchar', length: 80, nullable: true })
   paymentBank: string | null;
 
+  /**
+   * Localidad elegida del buscador de direcciones (QK-112). Las tres viajan
+   * juntas: salen de una sola sugerencia del geocoder, nunca se escriben a
+   * mano. Hoy solo `locality` se usa para buscar; `province` y `country` se
+   * guardan para mostrarlos en la ficha y desempatar homónimas más adelante.
+   */
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  locality: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  province: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  country: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

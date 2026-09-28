@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TODAY_AR, toIsoDate } from '../../common/today-ar';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
@@ -30,10 +31,18 @@ export interface PublicOrgSummary {
   name: string;
   description: string;
   address: string;
+  /** Ubicación normalizada (QK-112). Null en las que todavía no la cargaron. */
+  locality: string | null;
+  province: string | null;
   logoUrl: string | null;
   coverUrl: string | null;
   openNeedsCount: number;
   categories: string[];
+}
+
+export interface PublicLocality {
+  locality: string;
+  province: string | null;
 }
 
 /**
@@ -90,6 +99,10 @@ export class PublicService {
       );
     }
 
+    if (query.locality) {
+      base.andWhere('o.locality = :locality', { locality: query.locality });
+    }
+
     if (query.category) {
       base.andWhere(
         `EXISTS (
@@ -112,6 +125,8 @@ export class PublicService {
       .addSelect('o.name', 'name')
       .addSelect('o.description', 'description')
       .addSelect('o.address', 'address')
+      .addSelect('o.locality', 'locality')
+      .addSelect('o.province', 'province')
       .addSelect('COUNT(n.id)', 'openNeedsCount')
       // `::text` no es cosmético: node-pg no sabe parsear un array de un tipo
       // enum propio y devolvería el literal `{...}` de Postgres como string.
@@ -146,6 +161,24 @@ export class PublicService {
     };
   }
 
+  /**
+   * Localidades con al menos una organización validada, para el filtro del
+   * inicio (QK-109): el visitante solo elige entre las que dan resultados.
+   * ponytail: sin paginar; buscar/paginar si algún día son cientos.
+   */
+  listLocalities(): Promise<PublicLocality[]> {
+    return this.organizations
+      .createQueryBuilder('o')
+      .select('o.locality', 'locality')
+      .addSelect('o.province', 'province')
+      .distinct(true)
+      .where('o.status = :status', { status: OrganizationStatus.VALIDATED })
+      .andWhere('o.locality IS NOT NULL')
+      .orderBy('o.locality', 'ASC')
+      .addOrderBy('o.province', 'ASC')
+      .getRawMany<PublicLocality>();
+  }
+
   /** Feed global de necesidades abiertas de organizaciones validadas. */
   async listNeeds(query: ListPublicQueryDto) {
     const { page, pageSize } = paging(query);
@@ -168,6 +201,12 @@ export class PublicService {
       qb.andWhere('(s."name" ILIKE :q OR o.name ILIKE :q)', {
         q: `%${query.q}%`,
       });
+    }
+    if (query.withinDays) {
+      qb.andWhere(
+        `n."deadline" BETWEEN ${TODAY_AR} AND ${TODAY_AR} + CAST(:withinDays AS int)`,
+        { withinDays: query.withinDays },
+      );
     }
 
     const total = await qb.clone().getCount();
@@ -304,6 +343,8 @@ export class PublicService {
       name: organization.name,
       description: organization.description,
       address: organization.address,
+      locality: organization.locality,
+      province: organization.province,
       contact: organization.contact,
       logoUrl: images.get(id)?.logo ?? null,
       coverUrl: images.get(id)?.cover ?? null,
@@ -379,17 +420,6 @@ export class PublicService {
     }
     return images;
   }
-}
-
-function toIsoDate(value: Date | string): string {
-  if (!(value instanceof Date)) {
-    return value;
-  }
-  // Componentes locales, no `toISOString()`: pg entrega la fecha como
-  // medianoche local, y pasarla a UTC la corre un día en husos al este.
-  const month = `${value.getMonth() + 1}`.padStart(2, '0');
-  const day = `${value.getDate()}`.padStart(2, '0');
-  return `${value.getFullYear()}-${month}-${day}`;
 }
 
 function paging(query: ListPublicQueryDto): { page: number; pageSize: number } {

@@ -35,6 +35,7 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
     'addOrderBy',
     'limit',
     'offset',
+    'distinct',
   ]) {
     qb[method] = chain(method);
   }
@@ -131,6 +132,26 @@ describe('PublicService', () => {
     ]);
   });
 
+  it('filtra por localidad exacta', async () => {
+    const service = build({ rows: [] });
+    await service.listOrganizations({ locality: 'Villa María' });
+    expect(calls['andWhere:all']).toContainEqual([
+      'o.locality = :locality',
+      { locality: 'Villa María' },
+    ]);
+  });
+
+  it('las localidades salen solo de organizaciones validadas y con localidad', async () => {
+    const rows = [{ locality: 'Villa María', province: 'Córdoba' }];
+    const service = build({ rows });
+    await expect(service.listLocalities()).resolves.toEqual(rows);
+    expect(calls.where).toEqual([
+      'o.status = :status',
+      { status: OrganizationStatus.VALIDATED },
+    ]);
+    expect(calls.andWhere).toEqual(['o.locality IS NOT NULL']);
+  });
+
   it('no expone una organización que no está validada', async () => {
     const service = build({
       organization: { id: 'org-1', status: OrganizationStatus.PENDING },
@@ -146,6 +167,22 @@ describe('PublicService', () => {
     expect(calls.where?.[0]).toBe(
       'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
     );
+  });
+
+  it('con withinDays pide solo las que vencen entre hoy y hoy + N, en fecha de Argentina', async () => {
+    const service = build({ rows: [] });
+    await service.listNeeds({ withinDays: 7 });
+    const today = `(now() AT TIME ZONE 'America/Argentina/Cordoba')::date`;
+    expect(calls['andWhere:all']).toContainEqual([
+      `n."deadline" BETWEEN ${today} AND ${today} + CAST(:withinDays AS int)`,
+      { withinDays: 7 },
+    ]);
+  });
+
+  it('sin withinDays no recorta por fecha', async () => {
+    const service = build({ rows: [] });
+    await service.listNeeds({});
+    expect(calls['andWhere:all']).toBeUndefined();
   });
 
   it('en el detalle filtra por organización y necesidad abierta', async () => {

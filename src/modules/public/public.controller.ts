@@ -16,6 +16,11 @@ export class PublicController {
     return this.publicService.listOrganizations(query);
   }
 
+  @Get('localities')
+  listLocalities() {
+    return this.publicService.listLocalities();
+  }
+
   @Get('organizations/:id')
   getOrganization(@Param('id', ParseUUIDPipe) id: string) {
     return this.publicService.getOrganization(id);
