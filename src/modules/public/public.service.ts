@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TODAY_AR, toIsoDate } from '../../common/today-ar';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
@@ -49,12 +50,6 @@ export interface PublicLocality {
  * porque el feed público lo resuelve la base, no el service.
  */
 const OPEN_NEED = `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"`;
-
-/**
- * "Hoy" en Argentina. Neon y Vercel corren en UTC: con `CURRENT_DATE`, desde
- * las 21 h locales "hoy" ya sería mañana y se perderían las que vencen hoy.
- */
-const TODAY_AR = `(now() AT TIME ZONE 'America/Argentina/Cordoba')::date`;
 
 /**
  * El mismo criterio que `isOpportunityOpen`, pero en SQL: la ficha pública no
@@ -425,17 +420,6 @@ export class PublicService {
     }
     return images;
   }
-}
-
-function toIsoDate(value: Date | string): string {
-  if (!(value instanceof Date)) {
-    return value;
-  }
-  // Componentes locales, no `toISOString()`: pg entrega la fecha como
-  // medianoche local, y pasarla a UTC la corre un día en husos al este.
-  const month = `${value.getMonth() + 1}`.padStart(2, '0');
-  const day = `${value.getDate()}`.padStart(2, '0');
-  return `${value.getFullYear()}-${month}-${day}`;
 }
 
 function paging(query: ListPublicQueryDto): { page: number; pageSize: number } {

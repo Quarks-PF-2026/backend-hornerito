@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { CollectionPointModule } from './modules/collection-point/collection-point.module';
 import { DonationModule } from './modules/donation/donation.module';
+import { EventModule } from './modules/event/event.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MediaModule } from './modules/media/media.module';
@@ -79,6 +80,7 @@ import { VolunteeringModule } from './modules/volunteering/volunteering.module';
     DonationModule,
     VolunteerTypeModule,
     VolunteeringModule,
+    EventModule,
     GeocodingModule,
     MediaModule,
     PublicModule,
