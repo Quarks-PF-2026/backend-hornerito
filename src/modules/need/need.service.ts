@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { toIsoDate, todayAr } from '../../common/today-ar';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateNeedDto } from './dto/create-need.dto';
@@ -21,6 +23,7 @@ export class NeedService {
 
   async create(dto: CreateNeedDto): Promise<Need> {
     const repo = this.repo();
+    this.assertDeadlineNotPast(dto.deadline);
     await this.assertSupplyExists(dto.supplyId);
     return repo.save(
       repo.create({
@@ -34,6 +37,10 @@ export class NeedService {
 
   async update(id: string, dto: UpdateNeedDto): Promise<Need> {
     const need = await this.findOpenOrFail(id);
+    // Solo si cambia: editar otros campos de una necesidad vencida no debe exigir mover la fecha.
+    if (dto.deadline.slice(0, 10) !== toIsoDate(need.deadline)) {
+      this.assertDeadlineNotPast(dto.deadline);
+    }
     await this.assertSupplyExists(dto.supplyId);
     need.supplyId = dto.supplyId;
     need.requiredQuantity = dto.requiredQuantity;
@@ -65,6 +72,14 @@ export class NeedService {
       throw new ConflictException('La necesidad ya está cerrada.');
     }
     return need;
+  }
+
+  private assertDeadlineNotPast(deadline: string): void {
+    if (deadline.slice(0, 10) < todayAr()) {
+      throw new BadRequestException(
+        'La fecha límite no puede ser anterior a hoy.',
+      );
+    }
   }
 
   private async assertSupplyExists(supplyId: string): Promise<Supply> {
