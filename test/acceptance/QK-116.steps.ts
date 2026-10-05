@@ -74,7 +74,13 @@ defineFeature(feature, (test) => {
         .http()
         .post('/events')
         .set('Authorization', mundo().auth('usuario'))
-        .send({ name: nombre, kind: 'periodic', startDate: hoy() });
+        .send({
+          name: nombre,
+          kind: 'periodic',
+          startDate: hoy(),
+          startTime: '17:00',
+          weekdays: [0, 1, 2, 3, 4, 5, 6],
+        });
       mundo().datos.set('evento', res.body as EventoBody);
     });
   };
@@ -302,6 +308,7 @@ defineFeature(feature, (test) => {
             name: 'Colecta puntual',
             kind: 'one_off',
             startDate: sumarDias(hoy(), -Number(dias)),
+            startTime: '17:00',
           });
         mundo().datos.set('eventoExtraordinario', res.body as EventoBody);
       },

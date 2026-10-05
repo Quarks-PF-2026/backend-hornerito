@@ -24,14 +24,17 @@ export interface EventOccurrenceInput {
   kind: EventKind;
   startDate: string;
   endedOn: string | null;
+  /** 0 = domingo … 6 = sábado. Null en extraordinarios. */
+  weekdays: number[] | null;
 }
 
 const MAX_RANGE_DAYS = 366;
 const DEFAULT_RANGE_DAYS = 29;
 
 /**
- * ¿`date` es una ocurrencia real del evento? Periódico: todos los días desde
- * `startDate` hasta hoy o hasta la baja (`endedOn`), lo que sea antes.
+ * ¿`date` es una ocurrencia real del evento? Periódico: los días desde
+ * `startDate` hasta hoy o hasta la baja (`endedOn`), lo que sea antes, que
+ * caigan en uno de sus `weekdays`.
  * Extraordinario: únicamente `startDate`, pasado o futuro (existe para
  * mostrarse aunque todavía no se le pueda cargar asistencia).
  */
@@ -44,7 +47,9 @@ export function isOccurrence(
     return date === event.startDate;
   }
   const upperBound = minDate(event.endedOn ?? today, today);
-  return date >= event.startDate && date <= upperBound;
+  return (
+    date >= event.startDate && date <= upperBound && onWeekday(event, date)
+  );
 }
 
 /** Ocurrencias del evento dentro de `[from, to]` (inclusive), en orden ascendente. */
@@ -64,9 +69,27 @@ export function occurrenceDates(
   const end = minDate(upperBound, to);
   const dates: string[] = [];
   for (let d = start; d <= end; d = addDays(d, 1)) {
-    dates.push(d);
+    if (onWeekday(event, d)) dates.push(d);
   }
   return dates;
+}
+
+function onWeekday(event: EventOccurrenceInput, date: string): boolean {
+  return event.weekdays?.includes(weekdayOf(date)) ?? false;
+}
+
+/** Día de la semana de una fecha 'YYYY-MM-DD' (0 = domingo … 6 = sábado), en UTC como `addDays`. */
+export function weekdayOf(date: string): number {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+function sortedWeekdays(weekdays: number[]): number[] {
+  return [...weekdays].sort((a, b) => a - b);
+}
+
+function sameWeekdays(a: number[] | null, b: number[] | null): boolean {
+  return (a ?? []).join(',') === (b ?? []).join(',');
 }
 
 function minDate(a: string, b: string): string {
@@ -114,6 +137,8 @@ export class EventService {
     return repo.save(
       repo.create({
         ...dto,
+        weekdays:
+          dto.kind === EventKind.ONE_OFF ? null : sortedWeekdays(dto.weekdays),
         organizationId: this.orgId,
         active: true,
         endedOn: null,
@@ -123,19 +148,40 @@ export class EventService {
 
   async update(id: string, dto: UpdateEventDto): Promise<OrgEvent> {
     const event = await this.findOrFail(id);
-    const changesKindOrStartDate =
-      (dto.kind !== undefined && dto.kind !== event.kind) ||
-      (dto.startDate !== undefined && dto.startDate !== event.startDate);
+    const kind = dto.kind ?? event.kind;
+    // Extraordinario nunca lleva días; si el body no trae weekdays, se
+    // conservan los actuales (null si venía de extraordinario).
+    const weekdays =
+      kind === EventKind.ONE_OFF
+        ? null
+        : dto.weekdays !== undefined
+          ? sortedWeekdays(dto.weekdays)
+          : event.weekdays;
 
-    if (changesKindOrStartDate && (await this.hasAttendance(id))) {
+    // Lo que define qué fechas son ocurrencia (DOMAIN.md §16). Nombre y hora
+    // no lo hacen, por eso quedan editables aunque haya asistencia.
+    const changesSchedule =
+      kind !== event.kind ||
+      (dto.startDate !== undefined && dto.startDate !== event.startDate) ||
+      !sameWeekdays(weekdays, event.weekdays);
+
+    if (changesSchedule && (await this.hasAttendance(id))) {
       throw new ConflictException(
-        'El evento ya tiene asistencia registrada: solo se puede editar el nombre, no el tipo ni la fecha de inicio.',
+        'El evento ya tiene asistencia registrada: solo se puede editar el nombre y la hora de comienzo, no el tipo, la fecha de inicio ni los días de la semana.',
+      );
+    }
+
+    if (kind === EventKind.PERIODIC && !weekdays?.length) {
+      throw new BadRequestException(
+        'Elegí al menos un día de la semana para un evento periódico.',
       );
     }
 
     if (dto.name !== undefined) event.name = dto.name;
-    if (dto.kind !== undefined) event.kind = dto.kind;
+    if (dto.startTime !== undefined) event.startTime = dto.startTime;
     if (dto.startDate !== undefined) event.startDate = dto.startDate;
+    event.kind = kind;
+    event.weekdays = weekdays;
     return this.repo().save(event);
   }
 
