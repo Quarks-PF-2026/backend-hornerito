@@ -47,10 +47,11 @@ export interface PublicLocality {
 }
 
 /**
- * Una necesidad abierta: ni cerrada a mano ni ya cubierta. Se repite en SQL
- * porque el feed público lo resuelve la base, no el service.
+ * Una necesidad abierta: ni cerrada a mano, ni cubierta, ni vencida. Mismo
+ * criterio que `isNeedClosed`, repetido en SQL porque el feed público lo
+ * resuelve la base, no el service.
  */
-const OPEN_NEED = `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"`;
+const OPEN_NEED = `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= ${TODAY_AR}`;
 
 /**
  * El mismo criterio que `isOpportunityOpen`, pero en SQL: la ficha pública no

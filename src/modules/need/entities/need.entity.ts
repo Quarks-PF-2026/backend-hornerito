@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { toIsoDate, todayAr } from '../../../common/today-ar';
 
 @Entity('needs')
 @Index('IDX_needs_org_supply', ['organizationId', 'supplyId'])
@@ -39,11 +40,24 @@ export class Need {
   updatedAt: Date;
 }
 
-/** Una necesidad cerrada no se muestra ni se puede editar. */
+/** Vencida: la fecha límite ya pasó (día de calendario en Argentina). */
+export function isNeedExpired(need: { deadline: Date | string }): boolean {
+  return toIsoDate(need.deadline) < todayAr();
+}
+
+/**
+ * Una necesidad cerrada no se muestra ni recibe aportes: cerrada a mano,
+ * cubierta o vencida. Las dos últimas se derivan, no se persisten.
+ */
 export function isNeedClosed(need: {
   closedManually: boolean;
   coveredQuantity: number;
   requiredQuantity: number;
+  deadline: Date | string;
 }): boolean {
-  return need.closedManually || need.coveredQuantity >= need.requiredQuantity;
+  return (
+    need.closedManually ||
+    need.coveredQuantity >= need.requiredQuantity ||
+    isNeedExpired(need)
+  );
 }

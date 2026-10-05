@@ -23,7 +23,7 @@ function makeNeed(overrides: Partial<Need> = {}): Need {
     supplyId: 'supply-1',
     requiredQuantity: 50,
     coveredQuantity: 0,
-    deadline: '2026-08-01',
+    deadline: '2099-08-01',
     closedManually: false,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -199,6 +199,16 @@ describe('DonationService', () => {
 
     it('throws ConflictException when the need is already covered', async () => {
       needRepo.findOneBy.mockResolvedValue(makeNeed({ coveredQuantity: 50 }));
+
+      await expect(service.create(dtoWith())).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('throws ConflictException when the need is expired', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
+      );
 
       await expect(service.create(dtoWith())).rejects.toThrow(
         ConflictException,

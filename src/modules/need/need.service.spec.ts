@@ -11,7 +11,7 @@ import {
   SupplyUnit,
 } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
-import { Need } from './entities/need.entity';
+import { Need, isNeedClosed } from './entities/need.entity';
 import { NeedService } from './need.service';
 
 function makeNeed(overrides: Partial<Need> = {}): Need {
@@ -174,7 +174,22 @@ describe('NeedService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('allows editing an expired need without changing its deadline', async () => {
+    it('rejects editing an expired need without moving its deadline', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
+      );
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+
+      await expect(
+        service.update('need-1', {
+          supplyId: 'supply-1',
+          requiredQuantity: 80,
+          deadline: '2000-01-01',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('reopens an expired need when the deadline moves to the future', async () => {
       needRepo.findOneBy.mockResolvedValue(
         makeNeed({ deadline: '2000-01-01' }),
       );
@@ -183,10 +198,11 @@ describe('NeedService', () => {
       const result = await service.update('need-1', {
         supplyId: 'supply-1',
         requiredQuantity: 80,
-        deadline: '2000-01-01',
+        deadline: '2099-09-01',
       });
 
-      expect(result.requiredQuantity).toBe(80);
+      expect(result.deadline).toBe('2099-09-01');
+      expect(isNeedClosed(result)).toBe(false);
     });
 
     it('updates an open need with a valid supply', async () => {
@@ -234,6 +250,16 @@ describe('NeedService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    it('throws ConflictException when the need is expired', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
+      );
+
+      await expect(
+        service.updateProgress('need-1', { coveredQuantity: 10 }),
+      ).rejects.toThrow(ConflictException);
+    });
+
     it('throws NotFoundException when the need does not exist', async () => {
       needRepo.findOneBy.mockResolvedValue(null);
 
@@ -261,6 +287,14 @@ describe('NeedService', () => {
     it('throws ConflictException when already completed', async () => {
       needRepo.findOneBy.mockResolvedValue(
         makeNeed({ coveredQuantity: 50, requiredQuantity: 50 }),
+      );
+
+      await expect(service.close('need-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('throws ConflictException when expired', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
       );
 
       await expect(service.close('need-1')).rejects.toThrow(ConflictException);

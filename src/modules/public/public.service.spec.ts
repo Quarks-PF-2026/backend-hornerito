@@ -163,11 +163,11 @@ describe('PublicService', () => {
     );
   });
 
-  it('el feed solo pide necesidades abiertas', async () => {
+  it('el feed solo pide necesidades abiertas y no vencidas', async () => {
     const service = build({ rows: [] });
     await service.listNeeds({});
     expect(calls.where?.[0]).toBe(
-      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+      `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= (now() AT TIME ZONE 'America/Argentina/Cordoba')::date`,
     );
   });
 
@@ -207,7 +207,7 @@ describe('PublicService', () => {
 
     expect(calls.where).toEqual(['n."organizationId" = :id', { id: 'org-1' }]);
     expect(calls.andWhere?.[0]).toBe(
-      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+      `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= (now() AT TIME ZONE 'America/Argentina/Cordoba')::date`,
     );
     // El logo y la portada ya no se copian a `organizations`: salen de `media`.
     expect(detail.logoUrl).toBe('https://cdn/logo.png');
