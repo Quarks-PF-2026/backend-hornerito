@@ -33,6 +33,10 @@ export class Need {
   @Column({ default: false })
   closedManually: boolean;
 
+  /** Evento al que sirve la necesidad. Opcional: a lo sumo uno. */
+  @Column({ type: 'uuid', nullable: true })
+  eventId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

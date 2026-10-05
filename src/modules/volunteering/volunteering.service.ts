@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { EntityManager, In, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
+import { EventService } from '../event/event.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
@@ -40,7 +41,10 @@ export interface ApplicationResponse {
 
 @Injectable()
 export class VolunteeringService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly events: EventService,
+  ) {}
 
   /**
    * Un único listado para los dos lados: el gestor mira `pendingCount` y el
@@ -88,6 +92,7 @@ export class VolunteeringService {
   async create(dto: CreateOpportunityDto): Promise<VolunteerOpportunity> {
     const repo = this.opportunities();
     const volunteerTypeId = await this.resolveVolunteerTypeId(dto);
+    const eventId = await this.events.resolveLinkableId(dto.eventId);
     return repo.save(
       repo.create({
         organizationId: this.orgId,
@@ -96,6 +101,7 @@ export class VolunteeringService {
         startsAt: new Date(dto.startsAt),
         location: dto.location,
         volunteerTypeId,
+        eventId,
         capacity: dto.capacity,
         acceptedCount: 0,
         status: OpportunityStatus.OPEN,
@@ -124,6 +130,10 @@ export class VolunteeringService {
     opportunity.startsAt = new Date(dto.startsAt);
     opportunity.location = dto.location;
     opportunity.volunteerTypeId = await this.resolveVolunteerTypeId(dto);
+    opportunity.eventId = await this.events.resolveLinkableId(
+      dto.eventId,
+      opportunity.eventId,
+    );
     opportunity.capacity = dto.capacity;
     return this.opportunities().save(opportunity);
   }

@@ -1,4 +1,10 @@
-import { IsDateString, IsInt, IsPositive, IsUUID } from 'class-validator';
+import {
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateNeedDto {
   @IsUUID(undefined, { message: 'Elegí un insumo válido.' })
@@ -10,4 +16,8 @@ export class CreateNeedDto {
 
   @IsDateString({}, { message: 'Elegí una fecha límite válida.' })
   deadline: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'Elegí un evento válido.' })
+  eventId?: string | null;
 }

@@ -34,6 +34,10 @@ export class CreateOpportunityDto {
   @IsUUID('4', { message: 'Elegí un tipo de voluntario válido.' })
   volunteerTypeId?: string | null;
 
+  @IsOptional()
+  @IsUUID('4', { message: 'Elegí un evento válido.' })
+  eventId?: string | null;
+
   @IsInt({ message: 'Los cupos deben ser un número entero.' })
   @Min(1, { message: 'La actividad tiene que tener al menos un cupo.' })
   @Max(1000, { message: 'Los cupos no pueden superar los 1000.' })

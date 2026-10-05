@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { toIsoDate, todayAr } from '../../common/today-ar';
+import { EventService } from '../event/event.service';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateNeedDto } from './dto/create-need.dto';
@@ -15,7 +16,10 @@ import { Need, isNeedClosed, isNeedExpired } from './entities/need.entity';
 
 @Injectable()
 export class NeedService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly events: EventService,
+  ) {}
 
   async listMine(): Promise<Need[]> {
     return this.repo().find({ where: { organizationId: this.orgId } });
@@ -25,9 +29,11 @@ export class NeedService {
     const repo = this.repo();
     this.assertDeadlineNotPast(dto.deadline);
     await this.assertSupplyExists(dto.supplyId);
+    const eventId = await this.events.resolveLinkableId(dto.eventId);
     return repo.save(
       repo.create({
         ...dto,
+        eventId,
         organizationId: this.orgId,
         coveredQuantity: 0,
         closedManually: false,
@@ -46,6 +52,10 @@ export class NeedService {
       this.assertDeadlineNotPast(dto.deadline);
     }
     await this.assertSupplyExists(dto.supplyId);
+    need.eventId = await this.events.resolveLinkableId(
+      dto.eventId,
+      need.eventId,
+    );
     need.supplyId = dto.supplyId;
     need.requiredQuantity = dto.requiredQuantity;
     need.deadline = dto.deadline;

@@ -275,6 +275,26 @@ export class EventService {
     }
   }
 
+  /**
+   * Valida el `eventId` de una necesidad u oportunidad y lo devuelve (o null).
+   * La FK compuesta ya frena eventos de otra organización, pero daría 500: se
+   * responde 404 antes. Un evento dado de baja no admite asociaciones nuevas,
+   * pero la que ya existe (`currentEventId`) se conserva.
+   */
+  async resolveLinkableId(
+    eventId: string | null | undefined,
+    currentEventId: string | null = null,
+  ): Promise<string | null> {
+    if (!eventId) {
+      return null;
+    }
+    const event = await this.findOrFail(eventId);
+    if (!event.active && event.id !== currentEventId) {
+      throw new ConflictException('El evento está dado de baja.');
+    }
+    return event.id;
+  }
+
   private async findOrFail(id: string): Promise<OrgEvent> {
     const event = await this.repo().findOneBy({
       id,

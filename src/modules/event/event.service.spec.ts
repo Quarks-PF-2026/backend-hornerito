@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks are safe to reference unbound */
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Repository } from 'typeorm';
@@ -155,6 +159,42 @@ describe('EventService', () => {
       }),
     } as unknown as jest.Mocked<TenantContextService>;
     service = new EventService(tenantContext);
+  });
+
+  describe('resolveLinkableId', () => {
+    it('devuelve null sin consultar si no hay evento', async () => {
+      await expect(service.resolveLinkableId(null)).resolves.toBeNull();
+      await expect(service.resolveLinkableId(undefined)).resolves.toBeNull();
+      expect(eventRepo.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it('404 si el evento no existe en la organización', async () => {
+      eventRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.resolveLinkableId('otro-org')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('409 si el evento está dado de baja y no es el actual', async () => {
+      eventRepo.findOneBy.mockResolvedValue(
+        makeEvent({ id: 'event-baja', active: false }),
+      );
+
+      await expect(service.resolveLinkableId('event-baja')).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('conserva un evento dado de baja que ya estaba asociado', async () => {
+      eventRepo.findOneBy.mockResolvedValue(
+        makeEvent({ id: 'event-baja', active: false }),
+      );
+
+      await expect(
+        service.resolveLinkableId('event-baja', 'event-baja'),
+      ).resolves.toBe('event-baja');
+    });
   });
 
   describe('update — Dado un evento con asistencia registrada', () => {
