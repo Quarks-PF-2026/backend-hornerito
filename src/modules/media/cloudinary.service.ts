@@ -30,6 +30,7 @@ export interface UploadSignature {
     public_id: string;
     timestamp: number;
     allowed_formats: string;
+    overwrite: 'false';
     api_key: string;
     signature: string;
   };
@@ -124,6 +125,13 @@ export class CloudinaryService {
       public_id: publicId,
       timestamp: Math.round(Date.now() / 1000),
       allowed_formats: allowedFormats.join(','),
+      // Cloudinary sobrescribe por default en subidas firmadas, y la firma vale
+      // una hora: sin esto se podría confirmar un archivo válido y después
+      // pisarlo en el mismo public_id con otro que el confirm nunca vio. Va
+      // como string porque así lo manda FormData, y la firma tiene que
+      // coincidir con lo que llega. `invalidate` no hace falta: sin
+      // sobrescritura no hay caché vieja que invalidar.
+      overwrite: 'false' as const,
     };
     return {
       cloudName: config.cloud_name!,
