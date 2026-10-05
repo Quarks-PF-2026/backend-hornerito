@@ -6,3 +6,6 @@
  * de verdad restringe el formato a 'AAAA-MM-DD'.
  */
 export const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Hora 'HH:MM' en 24 h (00:00 a 23:59), sin segundos. */
+export const TIME_HH_MM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;

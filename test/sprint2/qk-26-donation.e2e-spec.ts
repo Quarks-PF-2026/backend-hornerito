@@ -100,7 +100,7 @@ describe('QK-26 Gestionar Donación Presencial (e2e)', () => {
     const need = await request(app.getHttpServer())
       .post('/needs')
       .set('Authorization', `Bearer ${orgToken}`)
-      .send({ supplyId, requiredQuantity: 50, deadline: '2026-12-31' })
+      .send({ supplyId, requiredQuantity: 50, deadline: '2099-12-31' })
       .expect(201);
     needId = (need.body as { id: string }).id;
 

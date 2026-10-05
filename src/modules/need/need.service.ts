@@ -1,15 +1,17 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { toIsoDate, todayAr } from '../../common/today-ar';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateNeedDto } from './dto/create-need.dto';
 import { UpdateNeedDto } from './dto/update-need.dto';
 import { UpdateProgressDto } from './dto/update-progress.dto';
-import { Need, isNeedClosed } from './entities/need.entity';
+import { Need, isNeedClosed, isNeedExpired } from './entities/need.entity';
 
 @Injectable()
 export class NeedService {
@@ -21,6 +23,7 @@ export class NeedService {
 
   async create(dto: CreateNeedDto): Promise<Need> {
     const repo = this.repo();
+    this.assertDeadlineNotPast(dto.deadline);
     await this.assertSupplyExists(dto.supplyId);
     return repo.save(
       repo.create({
@@ -33,7 +36,15 @@ export class NeedService {
   }
 
   async update(id: string, dto: UpdateNeedDto): Promise<Need> {
-    const need = await this.findOpenOrFail(id);
+    const need = await this.findOpenOrFail(id, true);
+    // Vencida: editarla es reabrirla, así que la fecha nueva no puede quedar en el pasado.
+    // Abierta: solo se valida si cambia, para no exigir mover una fecha que ya era válida.
+    if (
+      isNeedExpired(need) ||
+      dto.deadline.slice(0, 10) !== toIsoDate(need.deadline)
+    ) {
+      this.assertDeadlineNotPast(dto.deadline);
+    }
     await this.assertSupplyExists(dto.supplyId);
     need.supplyId = dto.supplyId;
     need.requiredQuantity = dto.requiredQuantity;
@@ -53,7 +64,11 @@ export class NeedService {
     return this.repo().save(need);
   }
 
-  private async findOpenOrFail(id: string): Promise<Need> {
+  /** `allowExpired`: la edición puede reabrir una vencida moviendo la fecha. */
+  private async findOpenOrFail(
+    id: string,
+    allowExpired = false,
+  ): Promise<Need> {
     const need = await this.repo().findOneBy({
       id,
       organizationId: this.orgId,
@@ -61,10 +76,22 @@ export class NeedService {
     if (!need) {
       throw new NotFoundException('La necesidad no existe.');
     }
-    if (isNeedClosed(need)) {
+    // Con `allowExpired` se evalúa como si venciera hoy: solo cuentan cierre manual y cobertura.
+    const closed = isNeedClosed(
+      allowExpired ? { ...need, deadline: todayAr() } : need,
+    );
+    if (closed) {
       throw new ConflictException('La necesidad ya está cerrada.');
     }
     return need;
+  }
+
+  private assertDeadlineNotPast(deadline: string): void {
+    if (deadline.slice(0, 10) < todayAr()) {
+      throw new BadRequestException(
+        'La fecha límite no puede ser anterior a hoy.',
+      );
+    }
   }
 
   private async assertSupplyExists(supplyId: string): Promise<Supply> {

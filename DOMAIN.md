@@ -46,7 +46,7 @@ Plataforma web donde organizaciones sociales (comedores, merenderos, ONGs) publi
 | **Publicación** (*post*) | Novedad que la organización difunde. |
 | **Membresía** | Vínculo entre una persona y una organización, con un rol. |
 | **Invitación** | Token con vencimiento por el cual una organización suma a alguien. |
-| **Evento** | Ocasión de servicio de una organización: periódico (frecuencia diaria) o extraordinario (fecha puntual). Detalle en §16. |
+| **Evento** | Ocasión de servicio de una organización: periódico (en días de la semana elegidos) o extraordinario (fecha puntual), con hora de comienzo. Detalle en §16. |
 | **Ocurrencia** | Par (evento, fecha); instancia concreta de un evento. No se persiste. Detalle en §16. |
 | **Asistencia** | Conteo agregado de beneficiarios atendidos en una ocurrencia. Detalle en §16. |
 
@@ -292,16 +292,17 @@ Confirmado con el usuario el 2026-09-27.
 ### Evento
 
 - **[CONFIRMADO]** Un **evento** es una ocasión de servicio de una organización. Dos tipos:
-  - **Periódico**: por ahora solo con frecuencia diaria (ej. la merienda).
-  - **Extraordinario**: una fecha puntual (ej. una colecta).
+  - **Periódico**: se repite en los **días de la semana** que se elijan (al menos uno; ej. lunes, miércoles y viernes). "Diario" es elegir los siete días (ej. la merienda). Confirmado con el usuario el 2026-10-05.
+  - **Extraordinario**: una fecha puntual (ej. una colecta). No lleva días de la semana.
+- **[CONFIRMADO]** Todo evento tiene una **hora de comienzo** (HH:MM, 24 h), obligatoria al crearlo. Es **informativa**: no restringe cuándo se carga la asistencia. Confirmado con el usuario el 2026-10-05.
 - **[CONFIRMADO]** Crear, editar y dar de baja un evento: `owner`, `admin`, `coordinador`. El `voluntario` solo ve (§3).
-- **[CONFIRMADO]** Un evento **sin asistencia registrada** se edita libremente. Un evento **con asistencia registrada** solo permite cambiar el nombre (no el tipo ni la fecha de inicio) o darlo de baja.
+- **[CONFIRMADO]** Un evento **sin asistencia registrada** se edita libremente. Un evento **con asistencia registrada** solo permite cambiar el nombre y la hora de comienzo (no el tipo, la fecha de inicio ni los días de la semana) o darlo de baja. Confirmado con el usuario el 2026-10-05.
 - **[CONFIRMADO]** Dar de baja un evento: deja de generar ocurrencias **desde el día siguiente**; las ocurrencias y asistencias pasadas se conservan. **Los eventos nunca se borran** (invariante 15, §11).
 
 ### Ocurrencia
 
 - **[CONFIRMADO]** Una **ocurrencia** es el par (evento, fecha). **No se persiste**, se calcula:
-  - Periódico: una ocurrencia por cada día desde la fecha de inicio hasta hoy (o hasta la fecha de baja, si el evento fue dado de baja).
+  - Periódico: una ocurrencia por cada día, desde la fecha de inicio hasta hoy (o hasta la fecha de baja, si el evento fue dado de baja), que caiga en uno de sus días de la semana. Confirmado con el usuario el 2026-10-05.
   - Extraordinario: una única ocurrencia, en su fecha.
 
 ### Asistencia

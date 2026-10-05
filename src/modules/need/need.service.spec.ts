@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks are safe to reference unbound */
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Repository } from 'typeorm';
 import {
   Supply,
@@ -7,7 +11,7 @@ import {
   SupplyUnit,
 } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
-import { Need } from './entities/need.entity';
+import { Need, isNeedClosed } from './entities/need.entity';
 import { NeedService } from './need.service';
 
 function makeNeed(overrides: Partial<Need> = {}): Need {
@@ -17,7 +21,7 @@ function makeNeed(overrides: Partial<Need> = {}): Need {
     supplyId: 'supply-1',
     requiredQuantity: 50,
     coveredQuantity: 0,
-    deadline: '2026-08-01',
+    deadline: '2099-08-01',
     closedManually: false,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -80,7 +84,7 @@ describe('NeedService', () => {
       const dto = {
         supplyId: 'supply-1',
         requiredQuantity: 50,
-        deadline: '2026-08-01',
+        deadline: '2099-08-01',
       };
 
       const result = await service.create(dto);
@@ -99,10 +103,22 @@ describe('NeedService', () => {
       const dto = {
         supplyId: 'missing',
         requiredQuantity: 50,
-        deadline: '2026-08-01',
+        deadline: '2099-08-01',
       };
 
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+      expect(needRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the deadline is in the past', async () => {
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+      const dto = {
+        supplyId: 'supply-1',
+        requiredQuantity: 50,
+        deadline: '2000-01-01',
+      };
+
+      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
       expect(needRepo.save).not.toHaveBeenCalled();
     });
   });
@@ -115,7 +131,7 @@ describe('NeedService', () => {
         service.update('missing-id', {
           supplyId: 'supply-1',
           requiredQuantity: 50,
-          deadline: '2026-08-01',
+          deadline: '2099-08-01',
         }),
       ).rejects.toThrow(NotFoundException);
     });
@@ -127,7 +143,7 @@ describe('NeedService', () => {
         service.update('need-1', {
           supplyId: 'supply-1',
           requiredQuantity: 50,
-          deadline: '2026-08-01',
+          deadline: '2099-08-01',
         }),
       ).rejects.toThrow(ConflictException);
     });
@@ -141,9 +157,52 @@ describe('NeedService', () => {
         service.update('need-1', {
           supplyId: 'supply-1',
           requiredQuantity: 50,
-          deadline: '2026-08-01',
+          deadline: '2099-08-01',
         }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('throws BadRequestException when moving the deadline to the past', async () => {
+      needRepo.findOneBy.mockResolvedValue(makeNeed());
+
+      await expect(
+        service.update('need-1', {
+          supplyId: 'supply-1',
+          requiredQuantity: 50,
+          deadline: '2000-01-01',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects editing an expired need without moving its deadline', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
+      );
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+
+      await expect(
+        service.update('need-1', {
+          supplyId: 'supply-1',
+          requiredQuantity: 80,
+          deadline: '2000-01-01',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('reopens an expired need when the deadline moves to the future', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
+      );
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+
+      const result = await service.update('need-1', {
+        supplyId: 'supply-1',
+        requiredQuantity: 80,
+        deadline: '2099-09-01',
+      });
+
+      expect(result.deadline).toBe('2099-09-01');
+      expect(isNeedClosed(result)).toBe(false);
     });
 
     it('updates an open need with a valid supply', async () => {
@@ -153,12 +212,12 @@ describe('NeedService', () => {
       const result = await service.update('need-1', {
         supplyId: 'supply-2',
         requiredQuantity: 80,
-        deadline: '2026-09-01',
+        deadline: '2099-09-01',
       });
 
       expect(result.supplyId).toBe('supply-2');
       expect(result.requiredQuantity).toBe(80);
-      expect(result.deadline).toBe('2026-09-01');
+      expect(result.deadline).toBe('2099-09-01');
     });
   });
 
@@ -185,6 +244,16 @@ describe('NeedService', () => {
 
     it('throws ConflictException when the need is already closed', async () => {
       needRepo.findOneBy.mockResolvedValue(makeNeed({ closedManually: true }));
+
+      await expect(
+        service.updateProgress('need-1', { coveredQuantity: 10 }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('throws ConflictException when the need is expired', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
+      );
 
       await expect(
         service.updateProgress('need-1', { coveredQuantity: 10 }),
@@ -218,6 +287,14 @@ describe('NeedService', () => {
     it('throws ConflictException when already completed', async () => {
       needRepo.findOneBy.mockResolvedValue(
         makeNeed({ coveredQuantity: 50, requiredQuantity: 50 }),
+      );
+
+      await expect(service.close('need-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('throws ConflictException when expired', async () => {
+      needRepo.findOneBy.mockResolvedValue(
+        makeNeed({ deadline: '2000-01-01' }),
       );
 
       await expect(service.close('need-1')).rejects.toThrow(ConflictException);

@@ -5,9 +5,15 @@ import { validate } from 'class-validator';
 import { Repository } from 'typeorm';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
 import { EventAttendance } from './entities/event-attendance.entity';
 import { EventKind, OrgEvent } from './entities/event.entity';
-import { EventService, isOccurrence, occurrenceDates } from './event.service';
+import {
+  EventService,
+  isOccurrence,
+  occurrenceDates,
+  weekdayOf,
+} from './event.service';
 
 const TODAY = '2026-09-27';
 
@@ -18,6 +24,8 @@ function makeEvent(overrides: Partial<OrgEvent> = {}): OrgEvent {
     name: 'Merienda diaria',
     kind: EventKind.PERIODIC,
     startDate: '2026-09-20',
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    startTime: '17:00',
     active: true,
     endedOn: null,
     createdAt: new Date(),
@@ -75,9 +83,32 @@ describe('isOccurrence / occurrenceDates (funciones puras)', () => {
     });
   });
 
+  describe('evento periódico en algunos días de la semana', () => {
+    // 2026-09-14 es lunes.
+    const event = makeEvent({ startDate: '2026-09-14', weekdays: [1, 3, 5] });
+
+    it('weekdayOf numera 0 = domingo … 6 = sábado', () => {
+      expect(weekdayOf('2026-09-13')).toBe(0);
+      expect(weekdayOf('2026-09-14')).toBe(1);
+      expect(weekdayOf('2026-09-19')).toBe(6);
+    });
+
+    it('Dado lunes, miércoles y viernes, Entonces occurrenceDates saltea los demás días', () => {
+      expect(occurrenceDates(event, '2026-09-14', '2026-09-20', TODAY)).toEqual(
+        ['2026-09-14', '2026-09-16', '2026-09-18'],
+      );
+    });
+
+    it('Dado lunes, miércoles y viernes, Entonces un martes dentro del rango no es ocurrencia', () => {
+      expect(isOccurrence(event, '2026-09-15', TODAY)).toBe(false);
+      expect(isOccurrence(event, '2026-09-16', TODAY)).toBe(true);
+    });
+  });
+
   describe('evento extraordinario', () => {
     const event = makeEvent({
       kind: EventKind.ONE_OFF,
+      weekdays: null,
       startDate: '2026-09-15',
     });
 
@@ -169,6 +200,57 @@ describe('EventService', () => {
     });
   });
 
+  describe('update — Dado un evento con asistencia registrada (días y hora)', () => {
+    it('Cuando se intenta cambiar los días de la semana, Entonces rechaza con 409', async () => {
+      eventRepo.findOneBy.mockResolvedValue(makeEvent());
+      attendanceRepo.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('event-1', { weekdays: [1, 3, 5] }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Cuando se mandan los mismos días en otro orden, Entonces no cuenta como cambio', async () => {
+      eventRepo.findOneBy.mockResolvedValue(makeEvent({ weekdays: [1, 3] }));
+      attendanceRepo.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('event-1', { weekdays: [3, 1] }),
+      ).resolves.toMatchObject({ weekdays: [1, 3] });
+    });
+
+    it('Cuando se le cambia la hora de comienzo, Entonces se guarda', async () => {
+      eventRepo.findOneBy.mockResolvedValue(makeEvent());
+      attendanceRepo.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('event-1', { startTime: '18:00' }),
+      ).resolves.toMatchObject({ startTime: '18:00' });
+    });
+  });
+
+  describe('update — Dado un evento sin asistencia', () => {
+    it('Cuando pasa a extraordinario, Entonces sus días quedan en null', async () => {
+      eventRepo.findOneBy.mockResolvedValue(makeEvent());
+      attendanceRepo.count.mockResolvedValue(0);
+
+      await expect(
+        service.update('event-1', { kind: EventKind.ONE_OFF }),
+      ).resolves.toMatchObject({ kind: EventKind.ONE_OFF, weekdays: null });
+    });
+
+    it('Cuando un extraordinario pasa a periódico sin días, Entonces rechaza con 400', async () => {
+      eventRepo.findOneBy.mockResolvedValue(
+        makeEvent({ kind: EventKind.ONE_OFF, weekdays: null }),
+      );
+      attendanceRepo.count.mockResolvedValue(0);
+
+      await expect(
+        service.update('event-1', { kind: EventKind.PERIODIC }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('deactivate', () => {
     it('es idempotente: un evento ya inactivo no mueve su endedOn', async () => {
       const inactivo = makeEvent({ active: false, endedOn: '2026-09-01' });
@@ -209,6 +291,8 @@ describe('CreateEventDto — validación de startDate', () => {
       name: 'Merienda diaria',
       kind: EventKind.PERIODIC,
       startDate,
+      startTime: '17:00',
+      weekdays: [0, 1, 2, 3, 4, 5, 6],
     });
     return validate(dto);
   }
@@ -231,4 +315,60 @@ describe('CreateEventDto — validación de startDate', () => {
     const errors = await errorsFor('20260927');
     expect(errors.some((e) => e.property === 'startDate')).toBe(true);
   });
+});
+
+describe('CreateEventDto — validación de weekdays y startTime', () => {
+  async function errorsFor(overrides: Record<string, unknown>) {
+    const dto = plainToInstance(CreateEventDto, {
+      name: 'Apoyo escolar',
+      kind: EventKind.PERIODIC,
+      startDate: '2026-09-27',
+      startTime: '17:30',
+      weekdays: [1, 3, 5],
+      ...overrides,
+    });
+    return (await validate(dto)).map((e) => e.property);
+  }
+
+  it('acepta un periódico con días válidos y hora HH:MM', async () => {
+    expect(await errorsFor({})).toEqual([]);
+  });
+
+  it.each([[[]], [[1, 1]], [[7]], [[-1]], [[1.5]], [undefined]])(
+    'rechaza weekdays = %j en un periódico',
+    async (weekdays) => {
+      expect(await errorsFor({ weekdays })).toContain('weekdays');
+    },
+  );
+
+  it('no exige weekdays en un extraordinario', async () => {
+    expect(
+      await errorsFor({ kind: EventKind.ONE_OFF, weekdays: undefined }),
+    ).toEqual([]);
+  });
+
+  it.each(['24:00', '7:30', '17:30:00', '', undefined])(
+    'rechaza startTime = %j',
+    async (startTime) => {
+      expect(await errorsFor({ startTime })).toContain('startTime');
+    },
+  );
+});
+
+describe('UpdateEventDto — campos ausentes vs. null', () => {
+  async function errorsFor(body: Record<string, unknown>) {
+    const dto = plainToInstance(UpdateEventDto, body);
+    return (await validate(dto)).map((e) => e.property);
+  }
+
+  it('un body vacío (todos los campos ausentes) pasa la validación', async () => {
+    expect(await errorsFor({})).toEqual([]);
+  });
+
+  it.each(['weekdays', 'startTime', 'name', 'kind', 'startDate'])(
+    'rechaza %s en null (400, no 500)',
+    async (field) => {
+      expect(await errorsFor({ [field]: null })).toContain(field);
+    },
+  );
 });

@@ -53,6 +53,7 @@ function mediaRow(purpose: string, url: string): Media {
     ownerId: 'org-1',
     purpose,
     url,
+    resourceType: 'image',
     publicId: `p/${purpose}`,
     format: 'png',
     width: 1,
@@ -75,6 +76,7 @@ describe('PublicService', () => {
     organization?: Partial<Organization> | null;
     rows?: unknown[];
     media?: Media[];
+    posts?: Partial<Post>[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
@@ -94,7 +96,7 @@ describe('PublicService', () => {
     } as unknown as Repository<CollectionPoint>;
 
     const posts = {
-      find: () => Promise.resolve([]),
+      find: () => Promise.resolve(options.posts ?? []),
     } as unknown as Repository<Post>;
 
     const opportunities = {
@@ -161,11 +163,11 @@ describe('PublicService', () => {
     );
   });
 
-  it('el feed solo pide necesidades abiertas', async () => {
+  it('el feed solo pide necesidades abiertas y no vencidas', async () => {
     const service = build({ rows: [] });
     await service.listNeeds({});
     expect(calls.where?.[0]).toBe(
-      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+      `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= (now() AT TIME ZONE 'America/Argentina/Cordoba')::date`,
     );
   });
 
@@ -205,10 +207,41 @@ describe('PublicService', () => {
 
     expect(calls.where).toEqual(['n."organizationId" = :id', { id: 'org-1' }]);
     expect(calls.andWhere?.[0]).toBe(
-      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+      `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= (now() AT TIME ZONE 'America/Argentina/Cordoba')::date`,
     );
     // El logo y la portada ya no se copian a `organizations`: salen de `media`.
     expect(detail.logoUrl).toBe('https://cdn/logo.png');
     expect(detail.coverUrl).toBe('https://cdn/cover.png');
+  });
+
+  it('en el detalle cada publicación trae sus adjuntos', async () => {
+    const video: Media = {
+      ...mediaRow('attachment', 'https://cdn/video.mp4'),
+      id: 'media-video',
+      ownerType: 'post',
+      ownerId: 'post-1',
+      resourceType: 'video',
+    };
+    const service = build({
+      organization: { id: 'org-1', status: OrganizationStatus.VALIDATED },
+      posts: [
+        { id: 'post-1', title: 't', content: 'c' },
+        { id: 'post-2', title: 't', content: 'c' },
+      ],
+      media: [mediaRow('logo', 'https://cdn/logo.png'), video],
+    });
+
+    const detail = await service.getOrganization('org-1');
+
+    expect(detail.posts[0].media).toEqual([
+      {
+        id: 'media-video',
+        url: 'https://cdn/video.mp4',
+        resourceType: 'video',
+        width: 1,
+        height: 1,
+      },
+    ]);
+    expect(detail.posts[1].media).toEqual([]);
   });
 });
