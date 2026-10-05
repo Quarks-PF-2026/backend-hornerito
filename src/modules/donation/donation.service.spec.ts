@@ -25,6 +25,7 @@ function makeNeed(overrides: Partial<Need> = {}): Need {
     coveredQuantity: 0,
     deadline: '2099-08-01',
     closedManually: false,
+    eventId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

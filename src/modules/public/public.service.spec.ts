@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { OrgEvent } from '../event/entities/event.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
 import {
@@ -42,6 +43,7 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
   qb.clone = () => qb;
   qb.getCount = () => Promise.resolve(rows.length);
   qb.getRawMany = () => Promise.resolve(rows);
+  qb.getMany = () => Promise.resolve(rows);
   return qb;
 }
 
@@ -67,9 +69,11 @@ function mediaRow(purpose: string, url: string): Media {
 
 describe('PublicService', () => {
   let calls: Record<string, unknown[]>;
+  let eventCalls: Record<string, unknown[]>;
 
   beforeEach(() => {
     calls = {};
+    eventCalls = {};
   });
 
   function build(options: {
@@ -77,6 +81,7 @@ describe('PublicService', () => {
     rows?: unknown[];
     media?: Media[];
     posts?: Partial<Post>[];
+    events?: Partial<OrgEvent>[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
@@ -107,6 +112,11 @@ describe('PublicService', () => {
       find: () => Promise.resolve([]),
     } as unknown as Repository<VolunteerType>;
 
+    const events = {
+      createQueryBuilder: () =>
+        fakeQueryBuilder(options.events ?? [], eventCalls),
+    } as unknown as Repository<OrgEvent>;
+
     return new PublicService(
       organizations,
       needs,
@@ -115,6 +125,7 @@ describe('PublicService', () => {
       posts,
       opportunities,
       volunteerTypes,
+      events,
     );
   }
 
@@ -185,6 +196,50 @@ describe('PublicService', () => {
     const service = build({ rows: [] });
     await service.listNeeds({});
     expect(calls['andWhere:all']).toBeUndefined();
+  });
+
+  it('el detalle lista solo eventos activos y no pasados, con fecha ISO', async () => {
+    const service = build({
+      organization: {
+        id: 'org-1',
+        status: OrganizationStatus.VALIDATED,
+        name: 'Comedor',
+        description: 'd',
+        address: 'a',
+        contact: 'c',
+      },
+      events: [
+        {
+          id: 'event-1',
+          name: 'Merienda',
+          kind: 'periodic' as OrgEvent['kind'],
+          startDate: '2026-09-01',
+          weekdays: [2],
+          startTime: '17:00',
+          active: false,
+        },
+      ],
+    });
+
+    const detail = await service.getOrganization('org-1');
+
+    expect(detail.events).toEqual([
+      {
+        id: 'event-1',
+        name: 'Merienda',
+        kind: 'periodic',
+        startDate: '2026-09-01',
+        weekdays: [2],
+        startTime: '17:00',
+      },
+    ]);
+    const eventFilters = (eventCalls['andWhere:all'] as unknown[][]).map(
+      (a) => a[0],
+    );
+    expect(eventFilters).toContain('e."active" = true');
+    expect(
+      eventFilters.some((f) => String(f).includes('e."startDate" >=')),
+    ).toBe(true);
   });
 
   it('en el detalle filtra por organización y necesidad abierta', async () => {

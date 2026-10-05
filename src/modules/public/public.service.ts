@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TODAY_AR, toIsoDate } from '../../common/today-ar';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { EventKind, OrgEvent } from '../event/entities/event.entity';
 import { Media } from '../media/entities/media.entity';
 import { mediaByOwner } from '../media/media.service';
 import { Need } from '../need/entities/need.entity';
@@ -83,6 +84,8 @@ export class PublicService {
     private readonly opportunities: Repository<VolunteerOpportunity>,
     @InjectRepository(VolunteerType)
     private readonly volunteerTypes: Repository<VolunteerType>,
+    @InjectRepository(OrgEvent)
+    private readonly events: Repository<OrgEvent>,
   ) {}
 
   async listOrganizations(
@@ -276,13 +279,21 @@ export class PublicService {
       postMedia,
       opportunities,
       volunteerTypes,
+      events,
     ] = await Promise.all([
       this.needs
         .createQueryBuilder('n')
         .innerJoin(Supply, 's', 's.id = n."supplyId"')
+        .leftJoin(
+          OrgEvent,
+          'e',
+          'e.id = n."eventId" AND e."organizationId" = n."organizationId"',
+        )
         .where('n."organizationId" = :id', { id })
         .andWhere(OPEN_NEED)
         .select('n.id', 'id')
+        .addSelect('n."eventId"', 'eventId')
+        .addSelect('e."name"', 'eventName')
         .addSelect('s."name"', 'supplyName')
         .addSelect('s."category"', 'supplyCategory')
         .addSelect('s."unit"', 'supplyUnit')
@@ -298,6 +309,8 @@ export class PublicService {
           requiredQuantity: string;
           coveredQuantity: string;
           deadline: Date | string;
+          eventId: string | null;
+          eventName: string | null;
         }>(),
       this.collectionPoints.findBy({ organizationId: id, active: true }),
       this.posts.find({
@@ -329,6 +342,11 @@ export class PublicService {
               't',
               't.id = o."volunteerTypeId" AND t."organizationId" = o."organizationId"',
             )
+            .leftJoin(
+              OrgEvent,
+              'e',
+              'e.id = o."eventId" AND e."organizationId" = o."organizationId"',
+            )
             .where('o."organizationId" = :id', { id })
             .andWhere(OPEN_OPPORTUNITY)
             .select('o.id', 'id')
@@ -340,6 +358,8 @@ export class PublicService {
             .addSelect('o."acceptedCount"', 'acceptedCount')
             .addSelect('o."volunteerTypeId"', 'volunteerTypeId')
             .addSelect('t."name"', 'volunteerTypeName')
+            .addSelect('o."eventId"', 'eventId')
+            .addSelect('e."name"', 'eventName')
             .orderBy('o."startsAt"', 'ASC')
             .getRawMany<{
               id: string;
@@ -351,6 +371,8 @@ export class PublicService {
               acceptedCount: string;
               volunteerTypeId: string | null;
               volunteerTypeName: string | null;
+              eventId: string | null;
+              eventName: string | null;
             }>()
         : Promise.resolve([]),
       organization.seeksVolunteers
@@ -360,6 +382,16 @@ export class PublicService {
             order: { name: 'ASC' },
           })
         : Promise.resolve([]),
+      // Activos; un extraordinario ya pasado no se ofrece.
+      this.events
+        .createQueryBuilder('e')
+        .where('e."organizationId" = :id', { id })
+        .andWhere('e."active" = true')
+        .andWhere(`(e."kind" = :periodic OR e."startDate" >= ${TODAY_AR})`, {
+          periodic: EventKind.PERIODIC,
+        })
+        .orderBy('e."name"', 'ASC')
+        .getMany(),
     ]);
 
     return {
@@ -403,6 +435,14 @@ export class PublicService {
         cuit: organization.paymentCuit,
         bank: organization.paymentBank,
       },
+      events: events.map((event) => ({
+        id: event.id,
+        name: event.name,
+        kind: event.kind,
+        startDate: toIsoDate(event.startDate),
+        weekdays: event.weekdays,
+        startTime: event.startTime,
+      })),
       volunteering: {
         seeksVolunteers: organization.seeksVolunteers,
         types: volunteerTypes.map((type) => ({

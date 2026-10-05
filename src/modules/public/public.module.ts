@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { OrgEvent } from '../event/entities/event.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
 import { Organization } from '../organization/entities/organization.entity';
@@ -20,6 +21,7 @@ import { PublicService } from './public.service';
       Post,
       VolunteerOpportunity,
       VolunteerType,
+      OrgEvent,
     ]),
   ],
   controllers: [PublicController],
