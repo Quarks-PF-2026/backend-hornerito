@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { MediaResourceType } from '../media-purposes';
 
 /**
  * Imagen asociada a algo de una organización.
@@ -17,8 +18,16 @@ import {
 @Index(
   'IDX_media_org_owner_purpose',
   ['organizationId', 'ownerType', 'ownerId', 'purpose'],
-  { unique: true },
+  // Parcial: `attachment` admite varias filas por owner; el resto sigue
+  // siendo un archivo por slot. Tiene que coincidir con la migración.
+  { unique: true, where: `"purpose" <> 'attachment'` },
 )
+@Index(
+  'IDX_media_org_owner_attachment',
+  ['organizationId', 'ownerType', 'ownerId'],
+  { where: `"purpose" = 'attachment'` },
+)
+@Index('UQ_media_publicId', ['publicId'], { unique: true })
 export class Media {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -40,6 +49,10 @@ export class Media {
 
   @Column('text')
   url: string;
+
+  /** Cloudinary separa imágenes y videos: hace falta para poder borrarlo. */
+  @Column({ type: 'varchar', default: 'image' })
+  resourceType: MediaResourceType;
 
   /** Identificador en Cloudinary; hace falta para poder borrarla. */
   @Column('text')

@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { TODAY_AR, toIsoDate } from '../../common/today-ar';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
 import { Media } from '../media/entities/media.entity';
+import { mediaByOwner } from '../media/media.service';
 import { Need } from '../need/entities/need.entity';
 import {
   Organization,
@@ -266,77 +267,99 @@ export class PublicService {
 
     // Las lecturas de voluntariado corren después de la guarda de arriba, así
     // que una organización pending o rejected no expone nada de esto.
-    const [needs, points, posts, images, opportunities, volunteerTypes] =
-      await Promise.all([
-        this.needs
-          .createQueryBuilder('n')
-          .innerJoin(Supply, 's', 's.id = n."supplyId"')
-          .where('n."organizationId" = :id', { id })
-          .andWhere(OPEN_NEED)
-          .select('n.id', 'id')
-          .addSelect('s."name"', 'supplyName')
-          .addSelect('s."category"', 'supplyCategory')
-          .addSelect('s."unit"', 'supplyUnit')
-          .addSelect('n."requiredQuantity"', 'requiredQuantity')
-          .addSelect('n."coveredQuantity"', 'coveredQuantity')
-          .addSelect('n."deadline"', 'deadline')
-          .orderBy('n."deadline"', 'ASC')
-          .getRawMany<{
-            id: string;
-            supplyName: string;
-            supplyCategory: string;
-            supplyUnit: string;
-            requiredQuantity: string;
-            coveredQuantity: string;
-            deadline: Date | string;
-          }>(),
-        this.collectionPoints.findBy({ organizationId: id, active: true }),
-        this.posts.find({
-          where: { organizationId: id },
-          order: { createdAt: 'DESC' },
-          take: 5,
-        }),
-        this.organizationImages([id]),
-        organization.seeksVolunteers
-          ? this.opportunities
-              .createQueryBuilder('o')
-              .leftJoin(
-                VolunteerType,
-                't',
-                't.id = o."volunteerTypeId" AND t."organizationId" = o."organizationId"',
-              )
-              .where('o."organizationId" = :id', { id })
-              .andWhere(OPEN_OPPORTUNITY)
-              .select('o.id', 'id')
-              .addSelect('o."title"', 'title')
-              .addSelect('o."description"', 'description')
-              .addSelect('o."startsAt"', 'startsAt')
-              .addSelect('o."location"', 'location')
-              .addSelect('o."capacity"', 'capacity')
-              .addSelect('o."acceptedCount"', 'acceptedCount')
-              .addSelect('o."volunteerTypeId"', 'volunteerTypeId')
-              .addSelect('t."name"', 'volunteerTypeName')
-              .orderBy('o."startsAt"', 'ASC')
-              .getRawMany<{
-                id: string;
-                title: string;
-                description: string;
-                startsAt: Date;
-                location: string;
-                capacity: string;
-                acceptedCount: string;
-                volunteerTypeId: string | null;
-                volunteerTypeName: string | null;
-              }>()
-          : Promise.resolve([]),
-        organization.seeksVolunteers
-          ? this.volunteerTypes.find({
-              where: { organizationId: id, active: true },
-              select: { id: true, name: true },
-              order: { name: 'ASC' },
-            })
-          : Promise.resolve([]),
-      ]);
+    const [
+      needs,
+      points,
+      posts,
+      images,
+      postMedia,
+      opportunities,
+      volunteerTypes,
+    ] = await Promise.all([
+      this.needs
+        .createQueryBuilder('n')
+        .innerJoin(Supply, 's', 's.id = n."supplyId"')
+        .where('n."organizationId" = :id', { id })
+        .andWhere(OPEN_NEED)
+        .select('n.id', 'id')
+        .addSelect('s."name"', 'supplyName')
+        .addSelect('s."category"', 'supplyCategory')
+        .addSelect('s."unit"', 'supplyUnit')
+        .addSelect('n."requiredQuantity"', 'requiredQuantity')
+        .addSelect('n."coveredQuantity"', 'coveredQuantity')
+        .addSelect('n."deadline"', 'deadline')
+        .orderBy('n."deadline"', 'ASC')
+        .getRawMany<{
+          id: string;
+          supplyName: string;
+          supplyCategory: string;
+          supplyUnit: string;
+          requiredQuantity: string;
+          coveredQuantity: string;
+          deadline: Date | string;
+        }>(),
+      this.collectionPoints.findBy({ organizationId: id, active: true }),
+      this.posts.find({
+        where: { organizationId: id },
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      this.organizationImages([id]),
+      // Todos los adjuntos de la organización, no solo los de las 5 últimas
+      // publicaciones: ahorra encadenar una segunda query, y son pocos por
+      // publicación (máximo 4).
+      // ponytail: trae adjuntos de publicaciones viejas que no se muestran;
+      // filtrar por los ids de `posts` si la organización acumula cientos.
+      this.media
+        .find({
+          where: {
+            organizationId: id,
+            ownerType: 'post',
+            purpose: 'attachment',
+          },
+          order: { createdAt: 'ASC' },
+        })
+        .then(mediaByOwner),
+      organization.seeksVolunteers
+        ? this.opportunities
+            .createQueryBuilder('o')
+            .leftJoin(
+              VolunteerType,
+              't',
+              't.id = o."volunteerTypeId" AND t."organizationId" = o."organizationId"',
+            )
+            .where('o."organizationId" = :id', { id })
+            .andWhere(OPEN_OPPORTUNITY)
+            .select('o.id', 'id')
+            .addSelect('o."title"', 'title')
+            .addSelect('o."description"', 'description')
+            .addSelect('o."startsAt"', 'startsAt')
+            .addSelect('o."location"', 'location')
+            .addSelect('o."capacity"', 'capacity')
+            .addSelect('o."acceptedCount"', 'acceptedCount')
+            .addSelect('o."volunteerTypeId"', 'volunteerTypeId')
+            .addSelect('t."name"', 'volunteerTypeName')
+            .orderBy('o."startsAt"', 'ASC')
+            .getRawMany<{
+              id: string;
+              title: string;
+              description: string;
+              startsAt: Date;
+              location: string;
+              capacity: string;
+              acceptedCount: string;
+              volunteerTypeId: string | null;
+              volunteerTypeName: string | null;
+            }>()
+        : Promise.resolve([]),
+      organization.seeksVolunteers
+        ? this.volunteerTypes.find({
+            where: { organizationId: id, active: true },
+            select: { id: true, name: true },
+            order: { name: 'ASC' },
+          })
+        : Promise.resolve([]),
+    ]);
 
     return {
       id: organization.id,
@@ -368,6 +391,7 @@ export class PublicService {
         title: post.title,
         content: post.content,
         createdAt: post.createdAt,
+        media: postMedia.get(post.id) ?? [],
       })),
       // Los datos bancarios son públicos a propósito: son el destino de la
       // transferencia, y sin ellos el donante no puede donar (QK-20).
