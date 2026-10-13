@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { linearRegression, linearRegressionLine } from 'simple-statistics';
 import { Between, Repository } from 'typeorm';
 import { todayAr } from '../../common/today-ar';
 import { TenantContextService } from '../tenant/tenant-context.service';
@@ -24,6 +25,62 @@ export interface EventOccurrenceInput {
   kind: EventKind;
   startDate: string;
   endedOn: string | null;
+}
+
+/** Días de asistencia registrada mínimos para proyectar (ADR-005). */
+export const MIN_FORECAST_DAYS = 30;
+/** Horizonte de la proyección: los N días siguientes a hoy. */
+export const FORECAST_HORIZON_DAYS = 7;
+/** Bajo este cambio semanal relativo al promedio, la tendencia es 'estable'. */
+const STABLE_WEEKLY_CHANGE = 0.05;
+
+export interface AttendanceForecast {
+  eventId: string;
+  eventName: string;
+  daysRecorded: number;
+  minDaysRequired: number;
+  sufficientHistory: boolean;
+  trend: 'sube' | 'baja' | 'estable' | null;
+  forecast: { date: string; expected: number }[];
+}
+
+/**
+ * Regresión lineal sobre (días desde el primer registro, asistentes).
+ * Es una tendencia, no un modelo estacional: ignora el día de la semana
+ * (ver ADR-005). Las fechas se restan como días de calendario UTC para que
+ * el huso de la máquina no corra un día.
+ */
+export function forecastAttendance(
+  series: { date: string; count: number }[],
+  today: string,
+): Pick<AttendanceForecast, 'trend' | 'forecast'> {
+  if (series.length < MIN_FORECAST_DAYS) {
+    return { trend: null, forecast: [] };
+  }
+  const first = series[0].date;
+  const points = series.map((s): [number, number] => [
+    daysBetween(first, s.date),
+    s.count,
+  ]);
+  const fit = linearRegression(points);
+  const slope = fit.m;
+  const predict = linearRegressionLine(fit);
+  const mean = points.reduce((acc, [, y]) => acc + y, 0) / points.length;
+
+  const trend =
+    Math.abs(slope) * FORECAST_HORIZON_DAYS <= STABLE_WEEKLY_CHANGE * mean
+      ? 'estable'
+      : slope > 0
+        ? 'sube'
+        : 'baja';
+  const forecast = Array.from({ length: FORECAST_HORIZON_DAYS }, (_, i) => {
+    const date = addDays(today, i + 1);
+    return {
+      date,
+      expected: Math.max(0, Math.round(predict(daysBetween(first, date)))),
+    };
+  });
+  return { trend, forecast };
 }
 
 const MAX_RANGE_DAYS = 366;
@@ -174,6 +231,34 @@ export class EventService {
     });
     const counts = new Map(attendances.map((a) => [a.date, a.count]));
     return dates.map((date) => ({ date, count: counts.get(date) ?? null }));
+  }
+
+  async attendanceForecast(): Promise<AttendanceForecast[]> {
+    const events = await this.repo().find({
+      where: {
+        organizationId: this.orgId,
+        active: true,
+        kind: EventKind.PERIODIC,
+      },
+      order: { name: 'ASC' },
+    });
+    const today = todayAr();
+    return Promise.all(
+      events.map(async (event) => {
+        const rows = await this.attendanceRepo().find({
+          where: { organizationId: this.orgId, eventId: event.id },
+          order: { date: 'ASC' },
+        });
+        return {
+          eventId: event.id,
+          eventName: event.name,
+          daysRecorded: rows.length,
+          minDaysRequired: MIN_FORECAST_DAYS,
+          sufficientHistory: rows.length >= MIN_FORECAST_DAYS,
+          ...forecastAttendance(rows, today),
+        };
+      }),
+    );
   }
 
   async setAttendance(
