@@ -18,11 +18,63 @@ function sumarDias(fecha: string, dias: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** Día de la semana de una fecha 'YYYY-MM-DD' (0 = domingo … 6 = sábado). */
+function diaDeSemana(fecha: string): number {
+  const [y, m, d] = fecha.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+const NUMERO_DE_DIA: Record<string, number> = {
+  domingo: 0,
+  lunes: 1,
+  martes: 2,
+  miércoles: 3,
+  jueves: 4,
+  viernes: 5,
+  sábado: 6,
+};
+
+/** "lunes, miércoles y viernes" → [1, 3, 5]. */
+function diasDeSemana(texto: string): number[] {
+  return texto.split(/, | y /).map((nombre) => {
+    // "sábados"/"domingos" → singular; "lunes"…"viernes" ya terminan en s.
+    const dia = nombre.trim();
+    return NUMERO_DE_DIA[dia] ?? NUMERO_DE_DIA[dia.replace(/s$/, '')];
+  });
+}
+
+/** "Diario" = los siete días de la semana. */
+const TODOS_LOS_DIAS = [0, 1, 2, 3, 4, 5, 6];
+
+/** Hora de comienzo por defecto: informativa, no condiciona nada en estos escenarios. */
+const HORA_POR_DEFECTO = '17:00';
+
+interface CrearEventoBody {
+  name: string;
+  kind: 'periodic' | 'one_off';
+  startDate: string;
+  startTime: string;
+  weekdays?: number[];
+}
+
+/** Body de un evento periódico diario con la hora por defecto. */
+function diario(name: string, startDate: string): CrearEventoBody {
+  return {
+    name,
+    kind: 'periodic',
+    startDate,
+    startTime: HORA_POR_DEFECTO,
+    weekdays: TODOS_LOS_DIAS,
+  };
+}
+
 interface EventoBody {
   id: string;
   name: string;
   kind: 'periodic' | 'one_off';
   startDate: string;
+  startTime: string;
+  weekdays: number[] | null;
   active: boolean;
   endedOn: string | null;
 }
@@ -35,10 +87,7 @@ interface Ocurrencia {
 defineFeature(feature, (test) => {
   const mundo = usarMundo();
 
-  const crearEvento = (
-    alias: string,
-    body: { name: string; kind: 'periodic' | 'one_off'; startDate: string },
-  ) =>
+  const crearEvento = (alias: string, body: CrearEventoBody) =>
     mundo()
       .http()
       .post('/events')
@@ -102,11 +151,7 @@ defineFeature(feature, (test) => {
 
   /** Precondición reusada por varios escenarios: un evento periódico que ya empezó hoy. */
   const existeElEvento = async (nombre: string) => {
-    const res = await crearEvento('usuario', {
-      name: nombre,
-      kind: 'periodic',
-      startDate: hoy(),
-    });
+    const res = await crearEvento('usuario', diario(nombre, hoy()));
     guardarEvento(nombre, res.body as EventoBody);
   };
 
@@ -119,11 +164,10 @@ defineFeature(feature, (test) => {
       /^el responsable crea el evento periódico "(.*)" que empezó hace (\d+) días$/,
       async (nombre: string, dias: string) => {
         const startDate = sumarDias(hoy(), -Number(dias));
-        mundo().respuesta = await crearEvento('usuario', {
-          name: nombre,
-          kind: 'periodic',
-          startDate,
-        });
+        mundo().respuesta = await crearEvento(
+          'usuario',
+          diario(nombre, startDate),
+        );
       },
     );
 
@@ -157,6 +201,105 @@ defineFeature(feature, (test) => {
     );
   });
 
+  test('Crear un evento periódico en algunos días de la semana', ({
+    given,
+    when,
+    then,
+    and,
+  }) => {
+    given('que existe una organización con su responsable', async () => {
+      await unaOrganizacion('usuario');
+    });
+
+    when(
+      /^el responsable crea el evento periódico "(.*)" los (.*) que empezó hace (\d+) días$/,
+      async (nombre: string, dias: string, haceDias: string) => {
+        const weekdays = diasDeSemana(dias);
+        mundo().datos.set('weekdays', weekdays);
+        mundo().respuesta = await crearEvento('usuario', {
+          name: nombre,
+          kind: 'periodic',
+          startDate: sumarDias(hoy(), -Number(haceDias)),
+          startTime: HORA_POR_DEFECTO,
+          weekdays,
+        });
+      },
+    );
+
+    then(/^el evento "(.*)" queda creado$/, (nombre: string) => {
+      expect(mundo().ultimaRespuesta().status).toBe(201);
+      const body = mundo().ultimaRespuesta().body as EventoBody;
+      expect(body.name).toBe(nombre);
+      expect(body.kind).toBe('periodic');
+      expect(body.weekdays).toEqual(mundo().datos.get('weekdays'));
+      guardarEvento(nombre, body);
+    });
+
+    and(
+      /^hay una ocurrencia disponible solo en los (.*) desde que empezó hasta hoy$/,
+      async (dias: string) => {
+        const weekdays = diasDeSemana(dias);
+        const evento = eventoGuardado('Apoyo escolar');
+        const res = await listarOcurrencias(
+          'usuario',
+          evento.id,
+          evento.startDate,
+          hoy(),
+        );
+        expect(res.status).toBe(200);
+        // Se calcula filtrando el calendario real: 14 días siempre cubren dos
+        // semanas, así que el resultado no depende de qué día cae hoy.
+        const fechasEsperadas: string[] = [];
+        for (let f = evento.startDate; f <= hoy(); f = sumarDias(f, 1)) {
+          if (weekdays.includes(diaDeSemana(f))) fechasEsperadas.push(f);
+        }
+        const ocurrencias = res.body as Ocurrencia[];
+        expect(ocurrencias.map((o) => o.date)).toEqual(fechasEsperadas);
+      },
+    );
+  });
+
+  test('La hora de comienzo de un evento queda guardada', ({
+    given,
+    when,
+    then,
+    and,
+  }) => {
+    given('que existe una organización con su responsable', async () => {
+      await unaOrganizacion('usuario');
+    });
+
+    when(
+      /^el responsable crea el evento periódico "(.*)" que comienza a las (\d{2}:\d{2})$/,
+      async (nombre: string, hora: string) => {
+        mundo().respuesta = await crearEvento('usuario', {
+          ...diario(nombre, hoy()),
+          startTime: hora,
+        });
+      },
+    );
+
+    then(
+      /^el evento "(.*)" queda creado con hora de comienzo (\d{2}:\d{2})$/,
+      (nombre: string, hora: string) => {
+        expect(mundo().ultimaRespuesta().status).toBe(201);
+        const body = mundo().ultimaRespuesta().body as EventoBody;
+        expect(body.name).toBe(nombre);
+        expect(body.startTime).toBe(hora);
+      },
+    );
+
+    and(
+      /^en el listado de eventos figura con hora de comienzo (\d{2}:\d{2})$/,
+      async (hora: string) => {
+        const res = await listarEventos('usuario');
+        expect(res.status).toBe(200);
+        const eventos = res.body as EventoBody[];
+        expect(eventos.map((e) => e.startTime)).toEqual([hora]);
+      },
+    );
+  });
+
   test('Crear un evento extraordinario', ({ given, when, then, and }) => {
     given('que existe una organización con su responsable', async () => {
       await unaOrganizacion('usuario');
@@ -169,6 +312,7 @@ defineFeature(feature, (test) => {
           name: nombre,
           kind: 'one_off',
           startDate: hoy(),
+          startTime: HORA_POR_DEFECTO,
         });
       },
     );
@@ -243,11 +387,10 @@ defineFeature(feature, (test) => {
     and(
       /^que existe el evento periódico "(.*)" que empezó hace (\d+) días$/,
       async (nombre: string, dias: string) => {
-        const res = await crearEvento('usuario', {
-          name: nombre,
-          kind: 'periodic',
-          startDate: sumarDias(hoy(), -Number(dias)),
-        });
+        const res = await crearEvento(
+          'usuario',
+          diario(nombre, sumarDias(hoy(), -Number(dias))),
+        );
         guardarEvento(nombre, res.body as EventoBody);
       },
     );
@@ -331,11 +474,7 @@ defineFeature(feature, (test) => {
         await mundo().unaOrganizacionValidada('otra', {
           name: `Comedor otra org ${Date.now()}`,
         });
-        const res = await crearEvento('otra', {
-          name: nombre,
-          kind: 'periodic',
-          startDate: hoy(),
-        });
+        const res = await crearEvento('otra', diario(nombre, hoy()));
         guardarEvento(nombre, res.body as EventoBody);
       },
     );
@@ -364,11 +503,10 @@ defineFeature(feature, (test) => {
     when(
       /^el voluntario intenta crear el evento "(.*)"$/,
       async (nombre: string) => {
-        mundo().respuesta = await crearEvento('voluntario', {
-          name: nombre,
-          kind: 'periodic',
-          startDate: hoy(),
-        });
+        mundo().respuesta = await crearEvento(
+          'voluntario',
+          diario(nombre, hoy()),
+        );
       },
     );
 
@@ -423,7 +561,7 @@ defineFeature(feature, (test) => {
     });
   });
 
-  test('Un evento con asistencia registrada solo permite editar el nombre', ({
+  test('Un evento con asistencia registrada no permite cambiar el tipo ni la fecha de inicio, pero sí el nombre', ({
     given,
     and,
     when,
@@ -479,6 +617,77 @@ defineFeature(feature, (test) => {
       expect(mundo().ultimaRespuesta().status).toBe(200);
       const body = mundo().ultimaRespuesta().body as EventoBody;
       expect(body.name).toBe(mundo().datos.get('nombreEsperado'));
+    });
+  });
+
+  test('Con asistencia registrada se puede cambiar la hora de comienzo', ({
+    given,
+    and,
+    when,
+    then,
+  }) => {
+    given('que existe una organización con su responsable', async () => {
+      await unaOrganizacion('usuario');
+    });
+
+    and(/^que existe el evento "(.*)"$/, async (nombre: string) => {
+      await existeElEvento(nombre);
+    });
+
+    and('que se cargó la asistencia de hoy', async () => {
+      const evento = eventoGuardado('Merienda diaria');
+      await cargarAsistencia('usuario', evento.id, hoy(), 5).expect(200);
+    });
+
+    when(
+      /^el responsable le cambia la hora de comienzo a las (\d{2}:\d{2})$/,
+      async (hora: string) => {
+        mundo().datos.set('horaEsperada', hora);
+        const evento = eventoGuardado('Merienda diaria');
+        mundo().respuesta = await editarEvento('usuario', evento.id, {
+          startTime: hora,
+        });
+      },
+    );
+
+    then('la nueva hora de comienzo queda guardada', () => {
+      expect(mundo().ultimaRespuesta().status).toBe(200);
+      const body = mundo().ultimaRespuesta().body as EventoBody;
+      expect(body.startTime).toBe(mundo().datos.get('horaEsperada'));
+    });
+  });
+
+  test('Con asistencia registrada no se pueden cambiar los días de la semana', ({
+    given,
+    and,
+    when,
+    then,
+  }) => {
+    given('que existe una organización con su responsable', async () => {
+      await unaOrganizacion('usuario');
+    });
+
+    and(/^que existe el evento "(.*)"$/, async (nombre: string) => {
+      await existeElEvento(nombre);
+    });
+
+    and('que se cargó la asistencia de hoy', async () => {
+      const evento = eventoGuardado('Merienda diaria');
+      await cargarAsistencia('usuario', evento.id, hoy(), 5).expect(200);
+    });
+
+    when(
+      /^el responsable intenta cambiarle los días de la semana a (.*)$/,
+      async (dias: string) => {
+        const evento = eventoGuardado('Merienda diaria');
+        mundo().respuesta = await editarEvento('usuario', evento.id, {
+          weekdays: diasDeSemana(dias),
+        });
+      },
+    );
+
+    then('el sistema no se lo permite', () => {
+      expect(mundo().ultimaRespuesta().status).toBe(409);
     });
   });
 });

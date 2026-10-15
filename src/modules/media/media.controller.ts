@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -17,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
 import { TenantGuard } from '../tenant/tenant.guard';
+import { ConfirmUploadDto } from './dto/confirm-upload.dto';
 import { MAX_UPLOAD_BYTES } from './media-purposes';
 import {
   MediaActor,
@@ -67,6 +69,36 @@ export class MediaController {
       ownerId,
       purpose,
       file,
+      actorOf(req),
+    );
+  }
+
+  /** Subida directa, paso 1: firma para subir del navegador a Cloudinary. */
+  @Post(':ownerType/:ownerId/:purpose/signature')
+  @HttpCode(200)
+  sign(
+    @Req() req: MediaRequest,
+    @Param('ownerType') ownerType: string,
+    @Param('ownerId', ParseUUIDPipe) ownerId: string,
+    @Param('purpose') purpose: string,
+  ) {
+    return this.mediaService.signFor(ownerType, ownerId, purpose, actorOf(req));
+  }
+
+  /** Subida directa, paso 2: el backend verifica el archivo y lo registra. */
+  @Post(':ownerType/:ownerId/:purpose/confirm')
+  confirm(
+    @Req() req: MediaRequest,
+    @Param('ownerType') ownerType: string,
+    @Param('ownerId', ParseUUIDPipe) ownerId: string,
+    @Param('purpose') purpose: string,
+    @Body() dto: ConfirmUploadDto,
+  ) {
+    return this.mediaService.confirmFor(
+      ownerType,
+      ownerId,
+      purpose,
+      dto,
       actorOf(req),
     );
   }

@@ -1,18 +1,41 @@
 import { EntityTarget, ObjectLiteral } from 'typeorm';
 import {
+  CONTENT_WRITER_ROLES,
   MEMBER_MANAGER_ROLES,
   OrganizationMembershipRole,
 } from '../organization/entities/organization-membership.entity';
+import { Post } from '../post/entities/post.entity';
 
 /**
  * Punto de extensión del módulo: para que un tipo de entidad nueva acepte
  * imágenes, se agrega una entrada acá. No hace falta tocar el service, el
  * controller ni la tabla.
  */
-export interface MediaPurposeConfig {
+export type MediaResourceType = 'image' | 'video';
+
+export interface DirectKindLimits {
   maxBytes: number;
+  /** Formatos tal como los informa Cloudinary (`jpg`, `mp4`, `mov`...). */
+  formats: readonly string[];
+}
+
+/**
+ * Un purpose se sube de una de dos formas, nunca de las dos:
+ * - por el backend (`maxBytes` + `transformation`): un archivo por slot, que
+ *   se reemplaza al subir otro;
+ * - directo del navegador a Cloudinary con firma del backend (`direct`):
+ *   varias filas por owner. Existe porque Vercel corta el body en 4,5 MB y un
+ *   video no entra; el backend firma, y después confirma leyendo de
+ *   Cloudinary los valores reales.
+ */
+export interface MediaPurposeConfig {
+  maxBytes?: number;
   /** Se aplica en Cloudinary al subir, para no guardar el original completo. */
-  transformation: { width: number; height: number; crop: 'fill' | 'limit' };
+  transformation?: { width: number; height: number; crop: 'fill' | 'limit' };
+  direct?: {
+    maxItems: number;
+    kinds: Record<MediaResourceType, DirectKindLimits>;
+  };
 }
 
 export interface MediaOwnerConfig {
@@ -39,6 +62,24 @@ export const MEDIA_OWNERS: Record<string, MediaOwnerConfig> = {
       cover: {
         maxBytes: 8_000_000,
         transformation: { width: 1600, height: 600, crop: 'fill' },
+      },
+    },
+  },
+  post: {
+    entity: Post,
+    roles: CONTENT_WRITER_ROLES,
+    purposes: {
+      attachment: {
+        direct: {
+          maxItems: 4,
+          kinds: {
+            image: {
+              maxBytes: 8_000_000,
+              formats: ['jpg', 'jpeg', 'png', 'webp'],
+            },
+            video: { maxBytes: 50_000_000, formats: ['mp4', 'webm', 'mov'] },
+          },
+        },
       },
     },
   },

@@ -13,6 +13,16 @@ Característica: Gestionar Eventos
     Entonces el evento "Merienda diaria" queda creado
     Y hay una ocurrencia disponible por cada día desde que empezó hasta hoy
 
+  Escenario: Crear un evento periódico en algunos días de la semana
+    Cuando el responsable crea el evento periódico "Apoyo escolar" los lunes, miércoles y viernes que empezó hace 14 días
+    Entonces el evento "Apoyo escolar" queda creado
+    Y hay una ocurrencia disponible solo en los lunes, miércoles y viernes desde que empezó hasta hoy
+
+  Escenario: La hora de comienzo de un evento queda guardada
+    Cuando el responsable crea el evento periódico "Merienda diaria" que comienza a las 17:30
+    Entonces el evento "Merienda diaria" queda creado con hora de comienzo 17:30
+    Y en el listado de eventos figura con hora de comienzo 17:30
+
   Escenario: Crear un evento extraordinario
     Cuando el responsable crea el evento extraordinario "Colecta de invierno" para hoy
     Entonces el evento "Colecta de invierno" queda creado
@@ -50,7 +60,7 @@ Característica: Gestionar Eventos
     Cuando el voluntario intenta dar de baja el evento "Merienda diaria"
     Entonces el sistema no se lo permite
 
-  Escenario: Un evento con asistencia registrada solo permite editar el nombre
+  Escenario: Un evento con asistencia registrada no permite cambiar el tipo ni la fecha de inicio, pero sí el nombre
     Dado que existe el evento "Merienda diaria"
     Y que se cargó la asistencia de hoy
     Cuando el responsable intenta cambiarle el tipo a extraordinario
@@ -59,3 +69,15 @@ Característica: Gestionar Eventos
     Entonces el sistema no se lo permite
     Cuando el responsable le cambia el nombre
     Entonces el cambio se guarda sin restricciones
+
+  Escenario: Con asistencia registrada se puede cambiar la hora de comienzo
+    Dado que existe el evento "Merienda diaria"
+    Y que se cargó la asistencia de hoy
+    Cuando el responsable le cambia la hora de comienzo a las 18:00
+    Entonces la nueva hora de comienzo queda guardada
+
+  Escenario: Con asistencia registrada no se pueden cambiar los días de la semana
+    Dado que existe el evento "Merienda diaria"
+    Y que se cargó la asistencia de hoy
+    Cuando el responsable intenta cambiarle los días de la semana a lunes, miércoles y viernes
+    Entonces el sistema no se lo permite

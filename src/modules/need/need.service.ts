@@ -1,16 +1,18 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { TODAY_AR_TZ } from '../../common/today-ar';
+import { TODAY_AR_TZ, toIsoDate, todayAr } from '../../common/today-ar';
+import { EventService } from '../event/event.service';
 import { Supply } from '../supply/entities/supply.entity';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateNeedDto } from './dto/create-need.dto';
 import { UpdateNeedDto } from './dto/update-need.dto';
 import { UpdateProgressDto } from './dto/update-progress.dto';
-import { Need, isNeedClosed } from './entities/need.entity';
+import { Need, isNeedClosed, isNeedExpired } from './entities/need.entity';
 
 /** Ventana de historial que cuenta para sugerir, y tope de sugerencias. */
 export const SUGGESTION_WINDOW_DAYS = 90;
@@ -32,6 +34,7 @@ export interface SuggestionInput {
   closedManually: boolean;
   coveredQuantity: number;
   requiredQuantity: number;
+  deadline: Date | string;
 }
 
 const dayInOrgTz = new Intl.DateTimeFormat('en-CA', { timeZone: TODAY_AR_TZ });
@@ -77,7 +80,10 @@ export function buildSuggestions(
 
 @Injectable()
 export class NeedService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly events: EventService,
+  ) {}
 
   async listMine(): Promise<Need[]> {
     return this.repo().find({ where: { organizationId: this.orgId } });
@@ -85,10 +91,13 @@ export class NeedService {
 
   async create(dto: CreateNeedDto): Promise<Need> {
     const repo = this.repo();
+    this.assertDeadlineNotPast(dto.deadline);
     await this.assertSupplyExists(dto.supplyId);
+    const eventId = await this.events.resolveLinkableId(dto.eventId);
     return repo.save(
       repo.create({
         ...dto,
+        eventId,
         organizationId: this.orgId,
         coveredQuantity: 0,
         closedManually: false,
@@ -97,8 +106,20 @@ export class NeedService {
   }
 
   async update(id: string, dto: UpdateNeedDto): Promise<Need> {
-    const need = await this.findOpenOrFail(id);
+    const need = await this.findOpenOrFail(id, true);
+    // Vencida: editarla es reabrirla, así que la fecha nueva no puede quedar en el pasado.
+    // Abierta: solo se valida si cambia, para no exigir mover una fecha que ya era válida.
+    if (
+      isNeedExpired(need) ||
+      dto.deadline.slice(0, 10) !== toIsoDate(need.deadline)
+    ) {
+      this.assertDeadlineNotPast(dto.deadline);
+    }
     await this.assertSupplyExists(dto.supplyId);
+    need.eventId = await this.events.resolveLinkableId(
+      dto.eventId,
+      need.eventId,
+    );
     need.supplyId = dto.supplyId;
     need.requiredQuantity = dto.requiredQuantity;
     need.deadline = dto.deadline;
@@ -129,6 +150,7 @@ export class NeedService {
       .addSelect('n."closedManually"', 'closedManually')
       .addSelect('n."coveredQuantity"', 'coveredQuantity')
       .addSelect('n."requiredQuantity"', 'requiredQuantity')
+      .addSelect('n.deadline', 'deadline')
       .from(Need, 'n')
       .innerJoin(
         Supply,
@@ -142,7 +164,11 @@ export class NeedService {
     return buildSuggestions(rows, new Date());
   }
 
-  private async findOpenOrFail(id: string): Promise<Need> {
+  /** `allowExpired`: la edición puede reabrir una vencida moviendo la fecha. */
+  private async findOpenOrFail(
+    id: string,
+    allowExpired = false,
+  ): Promise<Need> {
     const need = await this.repo().findOneBy({
       id,
       organizationId: this.orgId,
@@ -150,10 +176,22 @@ export class NeedService {
     if (!need) {
       throw new NotFoundException('La necesidad no existe.');
     }
-    if (isNeedClosed(need)) {
+    // Con `allowExpired` se evalúa como si venciera hoy: solo cuentan cierre manual y cobertura.
+    const closed = isNeedClosed(
+      allowExpired ? { ...need, deadline: todayAr() } : need,
+    );
+    if (closed) {
       throw new ConflictException('La necesidad ya está cerrada.');
     }
     return need;
+  }
+
+  private assertDeadlineNotPast(deadline: string): void {
+    if (deadline.slice(0, 10) < todayAr()) {
+      throw new BadRequestException(
+        'La fecha límite no puede ser anterior a hoy.',
+      );
+    }
   }
 
   private async assertSupplyExists(supplyId: string): Promise<Supply> {

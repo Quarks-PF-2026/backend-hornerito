@@ -12,6 +12,6 @@ import { MediaService } from './media.service';
   providers: [MediaService, CloudinaryService],
   // La donación económica sube el comprobante por su propia vía anónima, que no
   // pasa por `MediaService` (no hay tenant ni rol que chequear).
-  exports: [CloudinaryService],
+  exports: [CloudinaryService, MediaService],
 })
 export class MediaModule {}

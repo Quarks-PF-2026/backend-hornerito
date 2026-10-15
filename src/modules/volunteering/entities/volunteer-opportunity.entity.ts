@@ -44,6 +44,10 @@ export class VolunteerOpportunity {
   @Column({ type: 'uuid', nullable: true })
   volunteerTypeId: string | null;
 
+  /** Evento al que sirve la actividad. Opcional: a lo sumo uno. */
+  @Column({ type: 'uuid', nullable: true })
+  eventId: string | null;
+
   @Column({ type: 'int' })
   capacity: number;
 

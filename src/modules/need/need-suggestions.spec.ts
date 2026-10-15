@@ -16,6 +16,7 @@ function row(
     closedManually: closed,
     coveredQuantity: 0,
     requiredQuantity: 10,
+    deadline: '2099-01-01',
   };
 }
 

@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 
 export enum EventKind {
-  /** Se repite todos los días desde `startDate` hasta hoy o `endedOn`. */
+  /** Se repite en sus `weekdays` desde `startDate` hasta hoy o `endedOn`. */
   PERIODIC = 'periodic',
   /** Una sola ocurrencia, en `startDate`. */
   ONE_OFF = 'one_off',
@@ -38,6 +38,28 @@ export class OrgEvent {
   /** 'YYYY-MM-DD'. */
   @Column({ type: 'date' })
   startDate: string;
+
+  /**
+   * 0 = domingo … 6 = sábado, ordenados. Periódico: al menos uno (diario = los
+   * siete); extraordinario: null. Lo sostiene `CHK_events_weekdays`. El driver
+   * `pg` ya devuelve `smallint[]` como números.
+   */
+  @Column({ type: 'smallint', array: true, nullable: true })
+  weekdays: number[] | null;
+
+  /**
+   * 'HH:MM', 24 h. Informativa: no restringe la carga de asistencia.
+   * Postgres devuelve `time` como 'HH:MM:SS'; se recorta para que la API
+   * hable el mismo formato que recibe.
+   */
+  @Column({
+    type: 'time',
+    transformer: {
+      to: (value: string) => value,
+      from: (value: string | null) => value?.slice(0, 5) ?? value,
+    },
+  })
+  startTime: string;
 
   @Column({ default: true })
   active: boolean;

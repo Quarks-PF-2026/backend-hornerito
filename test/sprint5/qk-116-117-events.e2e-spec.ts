@@ -22,12 +22,21 @@ interface EventBody {
   name: string;
   kind: 'periodic' | 'one_off';
   startDate: string;
+  startTime: string;
+  weekdays: number[] | null;
 }
 
 function today(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Argentina/Cordoba',
   }).format(new Date());
+}
+
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
 }
 
 describe('QK-116/QK-117 Eventos y Asistencia — aislamiento (e2e)', () => {
@@ -76,7 +85,13 @@ describe('QK-116/QK-117 Eventos y Asistencia — aislamiento (e2e)', () => {
     const created = await request(app.getHttpServer())
       .post('/events')
       .set('Authorization', `Bearer ${ownerAToken}`)
-      .send({ name: 'Merienda diaria', kind: 'periodic', startDate: today() })
+      .send({
+        name: 'Merienda diaria',
+        kind: 'periodic',
+        startDate: today(),
+        startTime: '17:00',
+        weekdays: [0, 1, 2, 3, 4, 5, 6],
+      })
       .expect(201);
     eventAId = (created.body as EventBody).id;
   });
@@ -124,7 +139,12 @@ describe('QK-116/QK-117 Eventos y Asistencia — aislamiento (e2e)', () => {
     await request(app.getHttpServer())
       .post('/events')
       .set('Authorization', `Bearer ${volunteerAToken}`)
-      .send({ name: 'Colecta', kind: 'one_off', startDate: today() })
+      .send({
+        name: 'Colecta',
+        kind: 'one_off',
+        startDate: today(),
+        startTime: '10:00',
+      })
       .expect(403);
 
     await request(app.getHttpServer())
@@ -143,4 +163,62 @@ describe('QK-116/QK-117 Eventos y Asistencia — aislamiento (e2e)', () => {
     expect(crudo).not.toContain('attendance');
     expect(crudo).not.toContain('attendances');
   });
+
+  it('rechaza con 400 la asistencia en un día de la semana que el evento no tiene', async () => {
+    // Un solo día de la semana: el de ayer. Hoy queda afuera sin importar qué día sea.
+    const yesterday = addDays(today(), -1);
+    const [y, m, d] = yesterday.split('-').map(Number);
+    const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    const created = await request(app.getHttpServer())
+      .post('/events')
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .send({
+        name: 'Apoyo escolar',
+        kind: 'periodic',
+        startDate: addDays(today(), -7),
+        startTime: '14:00',
+        weekdays: [weekday],
+      })
+      .expect(201);
+    const id = (created.body as EventBody).id;
+
+    await request(app.getHttpServer())
+      .put(`/events/${id}/attendance/${today()}`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .send({ count: 3 })
+      .expect(400);
+    await request(app.getHttpServer())
+      .put(`/events/${id}/attendance/${yesterday}`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .send({ count: 3 })
+      .expect(200);
+  });
+
+  it('la hora vuelve como HH:MM y los días como números', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/events')
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(200);
+    const event = (res.body as EventBody[]).find((e) => e.id === eventAId);
+    expect(event?.startTime).toBe('17:00');
+    expect(event?.weekdays).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it.each([
+    ['periódico sin días', 'periodic', "'{}'"],
+    ['periódico con un día fuera de 0..6', 'periodic', "'{1,7}'"],
+    ['periódico con días en null', 'periodic', 'NULL'],
+    ['extraordinario con días', 'one_off', "'{1}'"],
+  ])(
+    'CHK_events_weekdays rechaza un %s aunque se escriba directo en la base',
+    async (_label, kind, weekdays) => {
+      await expect(
+        dataSource.query(
+          `INSERT INTO events ("organizationId", name, kind, "startDate", "startTime", weekdays)
+           VALUES ($1, 'Directo', $2, CURRENT_DATE, '10:00', ${weekdays}::smallint[])`,
+          [orgAId, kind],
+        ),
+      ).rejects.toThrow(/CHK_events_weekdays/);
+    },
+  );
 });

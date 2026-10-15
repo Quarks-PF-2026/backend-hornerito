@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { OrgEvent } from '../event/entities/event.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
 import {
@@ -42,6 +43,7 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
   qb.clone = () => qb;
   qb.getCount = () => Promise.resolve(rows.length);
   qb.getRawMany = () => Promise.resolve(rows);
+  qb.getMany = () => Promise.resolve(rows);
   return qb;
 }
 
@@ -53,6 +55,7 @@ function mediaRow(purpose: string, url: string): Media {
     ownerId: 'org-1',
     purpose,
     url,
+    resourceType: 'image',
     publicId: `p/${purpose}`,
     format: 'png',
     width: 1,
@@ -66,15 +69,19 @@ function mediaRow(purpose: string, url: string): Media {
 
 describe('PublicService', () => {
   let calls: Record<string, unknown[]>;
+  let eventCalls: Record<string, unknown[]>;
 
   beforeEach(() => {
     calls = {};
+    eventCalls = {};
   });
 
   function build(options: {
     organization?: Partial<Organization> | null;
     rows?: unknown[];
     media?: Media[];
+    posts?: Partial<Post>[];
+    events?: Partial<OrgEvent>[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
@@ -94,7 +101,7 @@ describe('PublicService', () => {
     } as unknown as Repository<CollectionPoint>;
 
     const posts = {
-      find: () => Promise.resolve([]),
+      find: () => Promise.resolve(options.posts ?? []),
     } as unknown as Repository<Post>;
 
     const opportunities = {
@@ -105,6 +112,11 @@ describe('PublicService', () => {
       find: () => Promise.resolve([]),
     } as unknown as Repository<VolunteerType>;
 
+    const events = {
+      createQueryBuilder: () =>
+        fakeQueryBuilder(options.events ?? [], eventCalls),
+    } as unknown as Repository<OrgEvent>;
+
     return new PublicService(
       organizations,
       needs,
@@ -113,6 +125,7 @@ describe('PublicService', () => {
       posts,
       opportunities,
       volunteerTypes,
+      events,
     );
   }
 
@@ -161,11 +174,11 @@ describe('PublicService', () => {
     );
   });
 
-  it('el feed solo pide necesidades abiertas', async () => {
+  it('el feed solo pide necesidades abiertas y no vencidas', async () => {
     const service = build({ rows: [] });
     await service.listNeeds({});
     expect(calls.where?.[0]).toBe(
-      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+      `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= (now() AT TIME ZONE 'America/Argentina/Cordoba')::date`,
     );
   });
 
@@ -183,6 +196,50 @@ describe('PublicService', () => {
     const service = build({ rows: [] });
     await service.listNeeds({});
     expect(calls['andWhere:all']).toBeUndefined();
+  });
+
+  it('el detalle lista solo eventos activos y no pasados, con fecha ISO', async () => {
+    const service = build({
+      organization: {
+        id: 'org-1',
+        status: OrganizationStatus.VALIDATED,
+        name: 'Comedor',
+        description: 'd',
+        address: 'a',
+        contact: 'c',
+      },
+      events: [
+        {
+          id: 'event-1',
+          name: 'Merienda',
+          kind: 'periodic' as OrgEvent['kind'],
+          startDate: '2026-09-01',
+          weekdays: [2],
+          startTime: '17:00',
+          active: false,
+        },
+      ],
+    });
+
+    const detail = await service.getOrganization('org-1');
+
+    expect(detail.events).toEqual([
+      {
+        id: 'event-1',
+        name: 'Merienda',
+        kind: 'periodic',
+        startDate: '2026-09-01',
+        weekdays: [2],
+        startTime: '17:00',
+      },
+    ]);
+    const eventFilters = (eventCalls['andWhere:all'] as unknown[][]).map(
+      (a) => a[0],
+    );
+    expect(eventFilters).toContain('e."active" = true');
+    expect(
+      eventFilters.some((f) => String(f).includes('e."startDate" >=')),
+    ).toBe(true);
   });
 
   it('en el detalle filtra por organización y necesidad abierta', async () => {
@@ -205,10 +262,41 @@ describe('PublicService', () => {
 
     expect(calls.where).toEqual(['n."organizationId" = :id', { id: 'org-1' }]);
     expect(calls.andWhere?.[0]).toBe(
-      'n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity"',
+      `n."closedManually" = false AND n."coveredQuantity" < n."requiredQuantity" AND n."deadline" >= (now() AT TIME ZONE 'America/Argentina/Cordoba')::date`,
     );
     // El logo y la portada ya no se copian a `organizations`: salen de `media`.
     expect(detail.logoUrl).toBe('https://cdn/logo.png');
     expect(detail.coverUrl).toBe('https://cdn/cover.png');
+  });
+
+  it('en el detalle cada publicación trae sus adjuntos', async () => {
+    const video: Media = {
+      ...mediaRow('attachment', 'https://cdn/video.mp4'),
+      id: 'media-video',
+      ownerType: 'post',
+      ownerId: 'post-1',
+      resourceType: 'video',
+    };
+    const service = build({
+      organization: { id: 'org-1', status: OrganizationStatus.VALIDATED },
+      posts: [
+        { id: 'post-1', title: 't', content: 'c' },
+        { id: 'post-2', title: 't', content: 'c' },
+      ],
+      media: [mediaRow('logo', 'https://cdn/logo.png'), video],
+    });
+
+    const detail = await service.getOrganization('org-1');
+
+    expect(detail.posts[0].media).toEqual([
+      {
+        id: 'media-video',
+        url: 'https://cdn/video.mp4',
+        resourceType: 'video',
+        width: 1,
+        height: 1,
+      },
+    ]);
+    expect(detail.posts[1].media).toEqual([]);
   });
 });

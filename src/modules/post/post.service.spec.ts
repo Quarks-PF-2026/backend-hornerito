@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks are safe to reference unbound */
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { MediaService } from '../media/media.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { Post } from './entities/post.entity';
 import { PostService } from './post.service';
@@ -21,6 +22,7 @@ describe('PostService', () => {
   let service: PostService;
   let postRepo: jest.Mocked<Repository<Post>>;
   let tenantContext: jest.Mocked<TenantContextService>;
+  let media: { listForOwners: jest.Mock; removeAllFor: jest.Mock };
 
   beforeEach(() => {
     postRepo = {
@@ -36,7 +38,11 @@ describe('PostService', () => {
         getRepository: () => postRepo,
       }),
     } as unknown as jest.Mocked<TenantContextService>;
-    service = new PostService(tenantContext);
+    media = {
+      listForOwners: jest.fn().mockResolvedValue(new Map()),
+      removeAllFor: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new PostService(tenantContext, media as unknown as MediaService);
   });
 
   describe('listMine', () => {
@@ -46,11 +52,34 @@ describe('PostService', () => {
 
       const result = await service.listMine();
 
-      expect(result).toEqual(posts);
+      expect(result).toEqual(posts.map((post) => ({ ...post, media: [] })));
       expect(postRepo.find).toHaveBeenCalledWith({
         where: { organizationId: 'org-1' },
         order: { createdAt: 'DESC' },
       });
+    });
+
+    it('adjunta a cada publicación sus archivos, en una sola consulta', async () => {
+      postRepo.find.mockResolvedValue([makePost(), makePost({ id: 'post-2' })]);
+      const attachment = {
+        id: 'media-1',
+        url: 'https://cdn/a.jpg',
+        resourceType: 'image' as const,
+        width: 10,
+        height: 10,
+      };
+      media.listForOwners.mockResolvedValue(
+        new Map([['post-2', [attachment]]]),
+      );
+
+      const result = await service.listMine();
+
+      expect(media.listForOwners).toHaveBeenCalledWith('post', [
+        'post-1',
+        'post-2',
+      ]);
+      expect(result[0].media).toEqual([]);
+      expect(result[1].media).toEqual([attachment]);
     });
   });
 
@@ -106,6 +135,27 @@ describe('PostService', () => {
         id: 'post-1',
         organizationId: 'org-1',
       });
+    });
+
+    it('borra también los adjuntos de la publicación', async () => {
+      postRepo.findOneBy.mockResolvedValue(makePost());
+
+      await service.remove('post-1');
+
+      expect(media.removeAllFor).toHaveBeenCalledWith('post', 'post-1');
+      // Primero los adjuntos: si fallan, la publicación queda para reintentar.
+      expect(media.removeAllFor.mock.invocationCallOrder[0]).toBeLessThan(
+        postRepo.delete.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('no toca adjuntos si la publicación no existe', async () => {
+      postRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.remove('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(media.removeAllFor).not.toHaveBeenCalled();
     });
   });
 });
