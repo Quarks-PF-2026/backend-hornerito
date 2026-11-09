@@ -158,6 +158,11 @@ export class CloudinaryService {
     try {
       const response = (await cloudinary.api.resource(publicId, {
         resource_type: resourceType,
+        // La Admin API no devuelve `duration` sin este flag (sí la devuelve el
+        // upload), y sin duración el límite de las historias rechaza todo video
+        // (verificado en e2e 2026-11-09, QK-111). Solo para video: en imágenes
+        // no aporta nada y es latencia extra.
+        ...(resourceType === 'video' && { media_metadata: true }),
       })) as {
         secure_url: string;
         public_id: string;
