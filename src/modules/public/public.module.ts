@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { MonetaryDonation } from '../donation/entities/monetary-donation.entity';
 import { OrgEvent } from '../event/entities/event.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
@@ -22,6 +23,7 @@ import { PublicService } from './public.service';
       VolunteerOpportunity,
       VolunteerType,
       OrgEvent,
+      MonetaryDonation,
     ]),
   ],
   controllers: [PublicController],

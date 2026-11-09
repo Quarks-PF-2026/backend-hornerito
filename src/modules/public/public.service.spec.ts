@@ -2,6 +2,11 @@ import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
 import { OrgEvent } from '../event/entities/event.entity';
+import { DonationKind } from '../donation/entities/donation.entity';
+import {
+  MonetaryDonation,
+  MonetaryDonationStatus,
+} from '../donation/entities/monetary-donation.entity';
 import { Media } from '../media/entities/media.entity';
 import { Need } from '../need/entities/need.entity';
 import {
@@ -37,6 +42,7 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
     'limit',
     'offset',
     'distinct',
+    'setParameters',
   ]) {
     qb[method] = chain(method);
   }
@@ -44,6 +50,7 @@ function fakeQueryBuilder(rows: unknown[], calls: Record<string, unknown[]>) {
   qb.getCount = () => Promise.resolve(rows.length);
   qb.getRawMany = () => Promise.resolve(rows);
   qb.getMany = () => Promise.resolve(rows);
+  qb.getRawOne = () => Promise.resolve(rows[0]);
   return qb;
 }
 
@@ -70,10 +77,12 @@ function mediaRow(purpose: string, url: string): Media {
 describe('PublicService', () => {
   let calls: Record<string, unknown[]>;
   let eventCalls: Record<string, unknown[]>;
+  let donationCalls: Record<string, unknown[]>;
 
   beforeEach(() => {
     calls = {};
     eventCalls = {};
+    donationCalls = {};
   });
 
   function build(options: {
@@ -82,6 +91,7 @@ describe('PublicService', () => {
     media?: Media[];
     posts?: Partial<Post>[];
     events?: Partial<OrgEvent>[];
+    donationRows?: unknown[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
@@ -117,6 +127,11 @@ describe('PublicService', () => {
         fakeQueryBuilder(options.events ?? [], eventCalls),
     } as unknown as Repository<OrgEvent>;
 
+    const donations = {
+      createQueryBuilder: () =>
+        fakeQueryBuilder(options.donationRows ?? [], donationCalls),
+    } as unknown as Repository<MonetaryDonation>;
+
     return new PublicService(
       organizations,
       needs,
@@ -126,6 +141,7 @@ describe('PublicService', () => {
       opportunities,
       volunteerTypes,
       events,
+      donations,
     );
   }
 
@@ -298,5 +314,171 @@ describe('PublicService', () => {
       },
     ]);
     expect(detail.posts[1].media).toEqual([]);
+  });
+
+  describe('ranking y perfil de donantes (DOMAIN.md §17)', () => {
+    const validatedOrg = (overrides: Partial<Organization> = {}) => ({
+      id: 'org-1',
+      status: OrganizationStatus.VALIDATED,
+      ...overrides,
+    });
+
+    /** Condiciones `where`/`andWhere` que recibió el query builder de donaciones. */
+    const donationFilters = () => [
+      donationCalls.where,
+      ...((donationCalls['andWhere:all'] as unknown[][] | undefined) ?? []),
+    ];
+
+    it('solo cuentan las económicas confirmadas, de una cuenta, no anónimas, a organizaciones validadas', async () => {
+      await build({}).topDonors();
+
+      expect(donationCalls['innerJoin:all']).toContainEqual([
+        Organization,
+        'o',
+        'o.id = d."organizationId" AND o.status = :validated',
+        { validated: OrganizationStatus.VALIDATED },
+      ]);
+      expect(donationFilters()).toEqual(
+        expect.arrayContaining([
+          ['d."kind" = :kind', { kind: DonationKind.ECONOMICA }],
+          [
+            'd."status" = :confirmed',
+            { confirmed: MonetaryDonationStatus.CONFIRMADA },
+          ],
+          ['d."donorUserId" IS NOT NULL'],
+          ['d."isAnonymous" = false'],
+        ]),
+      );
+    });
+
+    it('suma solo el mes en curso en hora de Argentina, por fecha de declaración', async () => {
+      await build({}).topDonors();
+
+      const month = (donationCalls['andWhere:all'] as unknown[][]).find((c) =>
+        String(c[0]).includes('createdAt'),
+      );
+      expect(month?.[0]).toBe(
+        'd."createdAt" >= :monthFrom AND d."createdAt" < :monthTo',
+      );
+      const { monthFrom, monthTo } = month?.[1] as Record<string, string>;
+      // Literales UTC del día 1 a las 00:00 AR: la columna no tiene zona.
+      expect(monthFrom).toMatch(/^\d{4}-\d{2}-01 03:00:00\.000$/);
+      expect(monthTo).toMatch(/^\d{4}-\d{2}-01 03:00:00\.000$/);
+    });
+
+    it('ante un empate de monto queda arriba quien llegó antes a ese total, y después el nombre', async () => {
+      await build({}).topDonors();
+
+      expect(donationCalls.orderBy).toEqual(['SUM(d.amount)', 'DESC']);
+      expect(donationCalls['addOrderBy:all']).toEqual([
+        ['MAX(d."createdAt")', 'ASC'],
+        ['u.name', 'ASC'],
+        ['u.id', 'ASC'],
+      ]);
+    });
+
+    it('el global muestra hasta 10 sin recortar por organización', async () => {
+      await build({}).topDonors();
+
+      expect(donationCalls.limit).toEqual([10]);
+      expect(
+        donationFilters().some((c) =>
+          String(c?.[0]).includes('organizationId'),
+        ),
+      ).toBe(false);
+    });
+
+    it('el de una organización recorta por ella y muestra hasta 5', async () => {
+      await build({}).topDonors('org-1');
+
+      expect(donationCalls.limit).toEqual([5]);
+      expect(donationCalls['andWhere:all']).toContainEqual([
+        'd."organizationId" = :organizationId',
+        { organizationId: 'org-1' },
+      ]);
+    });
+
+    it('numera las posiciones y castea los montos, sin contacto', async () => {
+      const service = build({
+        donationRows: [
+          { userId: 'user-beto', name: 'Beto Ruiz', total: '8000.00' },
+          { userId: 'user-ana', name: 'Ana Pérez', total: '3000.00' },
+        ],
+      });
+
+      await expect(service.topDonors()).resolves.toEqual([
+        { position: 1, userId: 'user-beto', name: 'Beto Ruiz', total: 8000 },
+        { position: 2, userId: 'user-ana', name: 'Ana Pérez', total: 3000 },
+      ]);
+      const selected = [
+        donationCalls.select,
+        ...(donationCalls['addSelect:all'] as unknown[][]),
+      ].map((c) => String(c[0]));
+      expect(selected.join(' ')).not.toMatch(/email|phone|donorContact|o\./);
+    });
+
+    it('la ficha con datos de cobro trae su top', async () => {
+      const service = build({
+        organization: validatedOrg({ paymentAlias: 'comedor.pibes' }),
+        donationRows: [
+          { userId: 'user-ana', name: 'Ana Pérez', total: '5000' },
+        ],
+      });
+
+      const detail = await service.getOrganization('org-1');
+
+      expect(detail.topDonors).toEqual([
+        { position: 1, userId: 'user-ana', name: 'Ana Pérez', total: 5000 },
+      ]);
+      expect(donationCalls.limit).toEqual([5]);
+    });
+
+    it('la ficha sin datos de cobro no muestra top ni lo consulta', async () => {
+      const service = build({
+        organization: validatedOrg({ paymentAlias: null }),
+        donationRows: [
+          { userId: 'user-ana', name: 'Ana Pérez', total: '5000' },
+        ],
+      });
+
+      const detail = await service.getOrganization('org-1');
+
+      expect(detail.topDonors).toEqual([]);
+      expect(donationCalls.limit).toBeUndefined();
+    });
+
+    it('el perfil devuelve nombre, alta y totales del mes e históricos, con las mismas reglas', async () => {
+      const service = build({
+        donationRows: [
+          {
+            userId: 'user-ana',
+            name: 'Ana Pérez',
+            memberSince: new Date('2025-03-15T15:00:00.000Z'),
+            monthTotal: '3000.00',
+            totalAmount: '5000.00',
+          },
+        ],
+      });
+
+      await expect(service.getDonor('user-ana')).resolves.toEqual({
+        userId: 'user-ana',
+        name: 'Ana Pérez',
+        memberSince: '2025-03-15T15:00:00.000Z',
+        monthTotal: 3000,
+        totalAmount: 5000,
+      });
+      expect(donationFilters()).toEqual(
+        expect.arrayContaining([
+          ['d."isAnonymous" = false'],
+          ['d."donorUserId" = :userId', { userId: 'user-ana' }],
+        ]),
+      );
+    });
+
+    it('una cuenta sin donaciones públicas confirmadas no tiene perfil', async () => {
+      await expect(build({}).getDonor('user-ana')).rejects.toThrow(
+        new NotFoundException('El donante no existe.'),
+      );
+    });
   });
 });
