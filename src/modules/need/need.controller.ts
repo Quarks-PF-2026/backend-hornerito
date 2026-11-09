@@ -28,6 +28,11 @@ export class NeedController {
     return this.needService.listMine();
   }
 
+  @Get('suggestions')
+  suggestions() {
+    return this.needService.suggestions();
+  }
+
   @Roles(...CONTENT_WRITER_ROLES)
   @Post()
   create(@Body() dto: CreateNeedDto) {

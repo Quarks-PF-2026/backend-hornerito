@@ -46,6 +46,22 @@ export class Donation {
   @Column({ type: 'varchar', length: 120, nullable: true })
   donorContact: string | null;
 
+  /**
+   * Cuenta con la que se donó, si había sesión (QK-113). Null en las donaciones
+   * de visitantes y en todas las anteriores: la asociación no es retroactiva.
+   * Es independiente de `donorName`/`donorContact`, que siguen siendo lo que el
+   * donante escribió en esa donación.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  donorUserId: string | null;
+
+  /**
+   * Anónima frente al público: no figura en rankings ni en el perfil del
+   * donante. La organización sigue viendo nombre y contacto (DOMAIN.md §7).
+   */
+  @Column({ default: false })
+  isAnonymous: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

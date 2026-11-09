@@ -53,7 +53,7 @@ function startOfDay(day: string): Date {
  * lo rompe — el driver lo serializa con la zona del proceso de Node y el
  * filtro se corre esas horas. Por eso los extremos viajan como literales UTC.
  */
-function utcLiteral(instant: Date): string {
+export function utcLiteral(instant: Date): string {
   return instant.toISOString().replace('T', ' ').replace('Z', '');
 }
 
@@ -92,4 +92,22 @@ export function createdAtWithin({
   // La propiedad se tipa como `Date`, pero lo que viaja al driver es el
   // literal de arriba. El cast es el precio de la columna sin zona.
   return operator as FindOperator<Date> | undefined;
+}
+
+/**
+ * Mes calendario en curso en hora de Argentina, como instantes UTC:
+ * [día 1 00:00 AR, día 1 del mes siguiente 00:00 AR). Lo usan el ranking de
+ * donantes y el perfil público (DOMAIN.md §17). `now` se recibe en vez de
+ * leerse adentro para que el corte de mes se pueda probar sin reloj falso.
+ */
+export function currentMonthRange(now: Date): { from: Date; to: Date } {
+  // Corrido al reloj local, los getters UTC devuelven año y mes de Argentina.
+  const local = new Date(now.getTime() + ORG_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+  const year = local.getUTCFullYear();
+  const month = local.getUTCMonth();
+  return {
+    from: new Date(Date.UTC(year, month, 1, -ORG_UTC_OFFSET_HOURS)),
+    // Date.UTC normaliza el mes 12 al enero del año siguiente.
+    to: new Date(Date.UTC(year, month + 1, 1, -ORG_UTC_OFFSET_HOURS)),
+  };
 }

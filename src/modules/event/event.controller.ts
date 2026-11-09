@@ -31,6 +31,12 @@ export class EventController {
     return this.eventService.listMine();
   }
 
+  // Antes de cualquier ruta con `:id` por si se suman GET con parámetro.
+  @Get('attendance-forecast')
+  attendanceForecast() {
+    return this.eventService.attendanceForecast();
+  }
+
   @Roles(...CONTENT_WRITER_ROLES)
   @Post()
   create(@Body() dto: CreateEventDto) {
