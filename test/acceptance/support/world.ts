@@ -15,13 +15,16 @@
  *      pisa lo que otro escenario esté usando.
  *   3. Guarda contra la base equivocada (ver `assertBaseDeTest`).
  */
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
+import { AppModule } from '../../../src/app.module';
+import { CloudinaryService } from '../../../src/modules/media/cloudinary.service';
+import { FakeCloudinary } from './fake-cloudinary';
 import {
   DEFAULT_PASSWORD,
-  bootstrapApp,
   createOrganization,
   createPlatformAdmin,
   cleanupOrganizations,
@@ -67,14 +70,28 @@ export class MundoDeAceptacion {
   /** Bolsa libre para que los steps se pasen ids sin ensuciar la clase. */
   readonly datos = new Map<string, unknown>();
 
+  /** Cloudinary simulado (ver `fake-cloudinary.ts`); uno por escenario. */
+  readonly cloudinary = new FakeCloudinary();
+
   private readonly orgIdsCreadas: string[] = [];
   private readonly emailsCreados: string[] = [];
 
   async iniciar(): Promise<void> {
     assertBaseDeTest();
-    const { app, dataSource } = await bootstrapApp();
-    this.app = app;
-    this.dataSource = dataSource;
+    // Mismo bootstrap que `bootstrapApp` (test/sprint2/helpers.ts), más el
+    // override de Cloudinary: es la única frontera externa que se simula.
+    const moduleFixture = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(CloudinaryService)
+      .useValue(this.cloudinary)
+      .compile();
+    this.app = moduleFixture.createNestApplication();
+    this.app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
+    await this.app.init();
+    this.dataSource = this.app.get(DataSource);
   }
 
   async cerrar(): Promise<void> {
@@ -94,7 +111,8 @@ export class MundoDeAceptacion {
   // --- Precondiciones de alto nivel, para los steps `Dado` -----------------
 
   async unUsuarioAutenticado(alias = 'usuario'): Promise<Session> {
-    const email = uniqueEmail(alias);
+    // El alias puede ser un nombre ("Carla Gómez"): sin slug el email es inválido.
+    const email = uniqueEmail(slug(alias));
     const sesion = await registerAndLogin(this.app, email);
     this.emailsCreados.push(email);
     this.sesiones.set(alias, sesion);

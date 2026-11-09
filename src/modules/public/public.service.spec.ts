@@ -14,6 +14,7 @@ import {
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
+import { Story } from '../story/entities/story.entity';
 import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
 import { VolunteerOpportunity } from '../volunteering/entities/volunteer-opportunity.entity';
 import { PublicService } from './public.service';
@@ -78,8 +79,16 @@ describe('PublicService', () => {
   let calls: Record<string, unknown[]>;
   let eventCalls: Record<string, unknown[]>;
   let donationCalls: Record<string, unknown[]>;
+  let storyCalls: Record<string, unknown[]>;
+  let storyInsert: Record<string, jest.Mock>;
 
   beforeEach(() => {
+    storyCalls = {};
+    storyInsert = {};
+    for (const method of ['insert', 'into', 'values', 'orIgnore']) {
+      storyInsert[method] = jest.fn(() => storyInsert);
+    }
+    storyInsert.execute = jest.fn().mockResolvedValue(undefined);
     calls = {};
     eventCalls = {};
     donationCalls = {};
@@ -92,10 +101,13 @@ describe('PublicService', () => {
     posts?: Partial<Post>[];
     events?: Partial<OrgEvent>[];
     donationRows?: unknown[];
+    stories?: Partial<Story>[];
+    storyOrgs?: Partial<Organization>[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
       findOneBy: () => Promise.resolve(options.organization ?? null),
+      find: () => Promise.resolve(options.storyOrgs ?? []),
     } as unknown as Repository<Organization>;
 
     const needs = {
@@ -132,6 +144,12 @@ describe('PublicService', () => {
         fakeQueryBuilder(options.donationRows ?? [], donationCalls),
     } as unknown as Repository<MonetaryDonation>;
 
+    const stories = {
+      createQueryBuilder: () =>
+        fakeQueryBuilder(options.stories ?? [], storyCalls),
+      manager: { createQueryBuilder: () => storyInsert },
+    } as unknown as Repository<Story>;
+
     return new PublicService(
       organizations,
       needs,
@@ -142,6 +160,7 @@ describe('PublicService', () => {
       volunteerTypes,
       events,
       donations,
+      stories,
     );
   }
 
@@ -479,6 +498,87 @@ describe('PublicService', () => {
       await expect(build({}).getDonor('user-ana')).rejects.toThrow(
         new NotFoundException('El donante no existe.'),
       );
+    });
+  });
+
+  describe('historias (QK-111)', () => {
+    const story = (id: string, organizationId: string, minute: number) => ({
+      id,
+      organizationId,
+      mediaUrl: `https://res.cloudinary.com/demo/${id}.jpg`,
+      mediaType: 'image',
+      durationSec: null,
+      text: null,
+      linkUrl: null,
+      createdAt: new Date(Date.UTC(2026, 10, 8, 12, minute)),
+      expiresAt: new Date(Date.UTC(2026, 10, 15, 12, minute)),
+    });
+    const storyFilters = () => (storyCalls['andWhere:all'] ?? []).flat();
+
+    it('agrupa por organización y ordena las organizaciones por su historia más reciente', async () => {
+      const service = build({
+        // Ya vienen de la base ordenadas por createdAt ASC.
+        stories: [
+          story('a1', 'org-a', 0),
+          story('b1', 'org-b', 1),
+          story('a2', 'org-a', 2),
+          story('b2', 'org-b', 3),
+        ] as Partial<Story>[],
+        storyOrgs: [
+          { id: 'org-a', name: 'Comedor A' },
+          { id: 'org-b', name: 'Comedor B' },
+        ],
+      });
+
+      const groups = await service.listStories();
+
+      expect(
+        groups.map((g) => [g.organizationName, g.stories.map((s) => s.id)]),
+      ).toEqual([
+        ['Comedor B', ['b1', 'b2']],
+        ['Comedor A', ['a1', 'a2']],
+      ]);
+      expect(storyCalls.where).toEqual(['s."deletedAt" IS NULL']);
+      expect(storyFilters()).toContain('s."expiresAt" > now()');
+      expect(storyCalls.innerJoin?.[2]).toContain('o.status = :validated');
+    });
+
+    it('sin sesión no filtra vistas; con sesión excluye las que el usuario ya vio', async () => {
+      await build({}).listStories();
+      expect(storyFilters().join(' ')).not.toContain('story_views');
+
+      storyCalls = {};
+      await build({}).listStories('user-ana');
+      expect(storyFilters()).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('NOT EXISTS'),
+          { viewerId: 'user-ana' },
+        ]),
+      );
+    });
+
+    it('registrar una vista sin sesión no escribe nada', async () => {
+      await build({}).viewStory('story-1');
+      expect(storyInsert.execute).not.toHaveBeenCalled();
+    });
+
+    it('registrar la vista de una historia inexistente o no vigente da 404', async () => {
+      await expect(build({}).viewStory('story-1', 'user-ana')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(storyInsert.execute).not.toHaveBeenCalled();
+    });
+
+    it('la vista toma la organización de la historia y es idempotente', async () => {
+      await build({
+        stories: [story('story-1', 'org-a', 0)] as Partial<Story>[],
+      }).viewStory('story-1', 'user-ana');
+      expect(storyInsert.values).toHaveBeenCalledWith({
+        storyId: 'story-1',
+        userId: 'user-ana',
+        organizationId: 'org-a',
+      });
+      expect(storyInsert.orIgnore).toHaveBeenCalled();
     });
   });
 });

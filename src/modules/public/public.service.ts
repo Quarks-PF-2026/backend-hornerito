@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { TODAY_AR, toIsoDate } from '../../common/today-ar';
 import { User } from '../auth/entities/user.entity';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
@@ -19,6 +19,9 @@ import {
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
+import { StoryView } from '../story/entities/story-view.entity';
+import { Story } from '../story/entities/story.entity';
+import { StoryDto, toStoryDto } from '../story/story.service';
 import { Supply } from '../supply/entities/supply.entity';
 import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
 import { VolunteerOpportunity } from '../volunteering/entities/volunteer-opportunity.entity';
@@ -47,6 +50,14 @@ export interface PublicOrgSummary {
   coverUrl: string | null;
   openNeedsCount: number;
   categories: string[];
+}
+
+/** Una organización en la barra de historias del inicio (QK-111). */
+export interface PublicStoryGroup {
+  organizationId: string;
+  organizationName: string;
+  organizationLogoUrl: string | null;
+  stories: StoryDto[];
 }
 
 export interface PublicLocality {
@@ -123,6 +134,8 @@ export class PublicService {
     private readonly events: Repository<OrgEvent>,
     @InjectRepository(MonetaryDonation)
     private readonly donations: Repository<MonetaryDonation>,
+    @InjectRepository(Story)
+    private readonly stories: Repository<Story>,
   ) {}
 
   async listOrganizations(
@@ -318,6 +331,7 @@ export class PublicService {
       volunteerTypes,
       events,
       topDonors,
+      stories,
     ] = await Promise.all([
       this.needs
         .createQueryBuilder('n')
@@ -435,6 +449,8 @@ export class PublicService {
       organization.paymentAlias
         ? this.topDonors(id)
         : Promise.resolve<DonorRankingRow[]>([]),
+      // Todas las vigentes, vistas o no: el perfil no se personaliza.
+      this.liveStories({ organizationId: id }),
     ]);
 
     return {
@@ -479,6 +495,7 @@ export class PublicService {
         bank: organization.paymentBank,
       },
       topDonors,
+      stories: stories.map(toStoryDto),
       events: events.map((event) => ({
         id: event.id,
         name: event.name,
@@ -500,6 +517,116 @@ export class PublicService {
         })),
       },
     };
+  }
+
+  /**
+   * Barra de historias del inicio (QK-111, DOMAIN.md §18). Con cuenta, se
+   * omiten las que ya vio, y con ellas la organización si no le queda ninguna;
+   * sin cuenta, todas. Dentro de cada organización, de la más vieja a la más
+   * nueva (el orden en que se reproducen); las organizaciones, por su historia
+   * más reciente primero.
+   */
+  async listStories(viewerId?: string): Promise<PublicStoryGroup[]> {
+    const stories = await this.liveStories({ viewerId });
+    const byOrg = new Map<string, Story[]>();
+    for (const story of stories) {
+      byOrg.set(story.organizationId, [
+        ...(byOrg.get(story.organizationId) ?? []),
+        story,
+      ]);
+    }
+    const orgIds = [...byOrg.keys()];
+    if (orgIds.length === 0) {
+      return [];
+    }
+
+    const [organizations, images] = await Promise.all([
+      this.organizations.find({
+        where: { id: In(orgIds), status: OrganizationStatus.VALIDATED },
+        select: { id: true, name: true },
+      }),
+      this.organizationImages(orgIds),
+    ]);
+    const names = new Map(organizations.map((o) => [o.id, o.name]));
+
+    const latest = (list: Story[]) => list[list.length - 1].createdAt.getTime();
+    return [...byOrg.entries()]
+      .filter(([orgId]) => names.has(orgId))
+      .sort(([, a], [, b]) => latest(b) - latest(a))
+      .map(([orgId, list]) => ({
+        organizationId: orgId,
+        organizationName: names.get(orgId)!,
+        organizationLogoUrl: images.get(orgId)?.logo ?? null,
+        stories: list.map(toStoryDto),
+      }));
+  }
+
+  /**
+   * Marca una historia como vista. El visitante sin cuenta no deja rastro
+   * (DOMAIN.md §18). Corre como owner, sin tenant: la existencia, vigencia y
+   * organización validada se verifican antes de insertar, y el
+   * `organizationId` de la vista sale de la historia, no del cliente.
+   */
+  async viewStory(storyId: string, viewerId?: string): Promise<void> {
+    if (!viewerId) {
+      return;
+    }
+    const [story] = await this.liveStories({ storyId });
+    if (!story) {
+      throw new NotFoundException('La historia no existe.');
+    }
+    // PK (storyId, userId): volver a abrirla no duplica.
+    await this.stories.manager
+      .createQueryBuilder()
+      .insert()
+      .into(StoryView)
+      .values({
+        storyId: story.id,
+        userId: viewerId,
+        organizationId: story.organizationId,
+      })
+      .orIgnore()
+      .execute();
+  }
+
+  /**
+   * Única definición de "historia visible al público": vigente, no eliminada
+   * y de una organización validada. Corre como owner y `stories` no tiene
+   * `FORCE ROW LEVEL SECURITY`, así que cada condición va explícita.
+   */
+  private liveStories(filter: {
+    organizationId?: string;
+    storyId?: string;
+    viewerId?: string;
+  }): Promise<Story[]> {
+    const qb = this.stories
+      .createQueryBuilder('s')
+      .innerJoin(
+        Organization,
+        'o',
+        'o.id = s."organizationId" AND o.status = :validated',
+        { validated: OrganizationStatus.VALIDATED },
+      )
+      .where('s."deletedAt" IS NULL')
+      .andWhere('s."expiresAt" > now()');
+    if (filter.organizationId) {
+      qb.andWhere('s."organizationId" = :organizationId', {
+        organizationId: filter.organizationId,
+      });
+    }
+    if (filter.storyId) {
+      qb.andWhere('s.id = :storyId', { storyId: filter.storyId });
+    }
+    if (filter.viewerId) {
+      qb.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM "story_views" v
+          WHERE v."storyId" = s.id AND v."userId" = :viewerId
+        )`,
+        { viewerId: filter.viewerId },
+      );
+    }
+    return qb.orderBy('s."createdAt"', 'ASC').getMany();
   }
 
   /**

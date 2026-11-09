@@ -15,6 +15,9 @@ export interface UploadedImage {
   bytes: number;
 }
 
+/** Lo que `getResource` lee de Cloudinary; `duration` (segundos) solo viene en videos. */
+export type CloudinaryResource = UploadedImage & { duration?: number | null };
+
 export interface UploadOptions {
   folder: string;
   transformation?: { width: number; height: number; crop: string };
@@ -150,7 +153,7 @@ export class CloudinaryService {
   async getResource(
     publicId: string,
     resourceType: MediaResourceType,
-  ): Promise<UploadedImage | null> {
+  ): Promise<CloudinaryResource | null> {
     this.assertConfigured();
     try {
       const response = (await cloudinary.api.resource(publicId, {
@@ -162,6 +165,7 @@ export class CloudinaryService {
         width: number;
         height: number;
         bytes: number;
+        duration?: number;
       };
       return {
         url: response.secure_url,
@@ -170,6 +174,7 @@ export class CloudinaryService {
         width: response.width,
         height: response.height,
         bytes: response.bytes,
+        duration: response.duration ?? null,
       };
     } catch (error) {
       if (
