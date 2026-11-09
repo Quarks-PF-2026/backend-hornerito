@@ -15,11 +15,11 @@ Para explorar código usá el MCP `codebase-memory` primero (CLAUDE.md §5). No 
 
 ## Caché de invariantes duras (DOMAIN.md §11)
 
-Estas catorce las podés afirmar sin releer el documento y sin preguntar, **respetando su marca**:
+Estas diecinueve las podés afirmar sin releer el documento y sin preguntar, **respetando su marca**:
 
 1. Un dato pertenece a **una y solo una** organización.
 2. Una organización que no está `validated` **no opera**.
-3. Un `voluntario` **nunca escribe contenido**. **[PROVISORIO]**
+3. Un `voluntario` **nunca escribe contenido**. **[PROVISORIO]** — excepción confirmada: puede cargar/corregir asistencia de un evento (§16).
 4. El rol `owner` **no se asigna ni se transfiere**. **[PROVISORIO]**
 5. Una cuenta sin correo verificado **no inicia sesión**.
 6. Los permisos se revalidan en cada request; el token no es la fuente de verdad del rol.
@@ -27,10 +27,15 @@ Estas catorce las podés afirmar sin releer el documento y sin preguntar, **resp
 8. Una organización rechazada **puede volver a postularse**. **[CONFIRMADO]**
 9. La cobertura de una necesidad **puede superar** lo requerido; el exceso se registra. **[CONFIRMADO]**
 10. Todo ajuste manual de cobertura **deja traza de quién y por qué**. **[CONFIRMADO]**
-11. El donante puede ser anónimo, identificado sin cuenta, o registrado. **[CONFIRMADO]**
+11. El donante puede ser anónimo, identificado sin cuenta, o registrado. **[CONFIRMADO]** "Anónimo" es frente al público: la organización puede ver nombre y contacto (§7, QK-113, 2026-11-08).
 12. El directorio público muestra **solo** organizaciones `validated`.
 13. Un ítem de donación puede existir sin necesidad asociada.
 14. La difusión pública y la gestión interna **pesan igual**. **[CONFIRMADO]**
+15. Un evento **nunca se borra**; darlo de baja solo detiene sus ocurrencias futuras. **[CONFIRMADO]**
+16. Una ocurrencia tiene **a lo sumo una** asistencia; cargarla de nuevo la reemplaza. **[CONFIRMADO]**
+17. La asistencia **nunca se expone** en el directorio público ni en la ficha de organización. **[CONFIRMADO]**
+18. Ninguna superficie pública muestra el **contacto de un donante**. **[CONFIRMADO]** (2026-11-08, QK-110/113/114/115)
+19. Una historia **nunca se borra físicamente**: vencer o eliminarla solo la oculta (§18). **[CONFIRMADO 2026-11-08, QK-111]**
 
 Una invariante **[PROVISORIO]** se advierte como "puede cambiar", nunca se afirma como definitiva.
 
