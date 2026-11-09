@@ -80,6 +80,8 @@ function makeDonation(
     externalPaymentId: null,
     donorName: null,
     donorContact: null,
+    donorUserId: null,
+    isAnonymous: false,
     decidedByUserId: null,
     decidedAt: null,
     rejectReason: null,
@@ -178,6 +180,62 @@ describe('MonetaryDonationService', () => {
       );
       // Sin email no hay a quién acusar recibo.
       expect(mail.send).not.toHaveBeenCalled();
+    });
+
+    describe('con y sin sesión (QK-113)', () => {
+      it('dado un donante con sesión, cuando declara, entonces la donación queda asociada a su cuenta con lo que escribió en el formulario', async () => {
+        await service.declare(
+          'org-1',
+          dtoWith({
+            donorName: 'Familia Pérez',
+            donorContact: 'familia.perez@correo.test',
+          }),
+          undefined,
+          'user-ana',
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            donorUserId: 'user-ana',
+            isAnonymous: false,
+            donorName: 'Familia Pérez',
+            donorContact: 'familia.perez@correo.test',
+          }),
+        );
+      });
+
+      it('dado un donante con sesión, cuando la marca anónima, entonces queda asociada y anónima, conservando nombre y contacto para la organización', async () => {
+        await service.declare(
+          'org-1',
+          dtoWith({
+            donorName: 'Ana Pérez',
+            donorContact: 'ana@mail.com',
+            isAnonymous: true,
+          }),
+          undefined,
+          'user-ana',
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            donorUserId: 'user-ana',
+            isAnonymous: true,
+            donorName: 'Ana Pérez',
+            donorContact: 'ana@mail.com',
+          }),
+        );
+      });
+
+      it('dado un visitante sin sesión, cuando declara aunque pida anonimato, entonces no queda asociada a ninguna cuenta ni marcada anónima', async () => {
+        await service.declare(
+          'org-1',
+          dtoWith({ donorName: 'Ana Pérez', isAnonymous: true }),
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ donorUserId: null, isAnonymous: false }),
+        );
+      });
     });
 
     it('le acusa recibo al donante que dejó email', async () => {

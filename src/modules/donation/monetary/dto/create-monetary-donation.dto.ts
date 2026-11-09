@@ -1,5 +1,6 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNumber,
@@ -50,4 +51,17 @@ export class CreateMonetaryDonationDto {
   @IsEmail({}, { message: 'Ingresá un email válido o dejalo vacío.' })
   @Length(1, 120)
   donorContact?: string;
+
+  /**
+   * Anónima frente al público (QK-113): solo tiene efecto con sesión, porque
+   * sin cuenta la donación no figura en ningún ranking del que esconderse. Por
+   * multipart llega como 'true'/'false'; cualquier otro valor queda como está y
+   * lo rechaza `@IsBoolean`.
+   */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean({ message: 'Indicá si la donación es anónima con sí o no.' })
+  isAnonymous?: boolean;
 }
