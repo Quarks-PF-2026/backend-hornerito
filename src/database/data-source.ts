@@ -13,6 +13,8 @@ import { Organization } from '../modules/organization/entities/organization.enti
 import { OrganizationInvitation } from '../modules/organization/entities/organization-invitation.entity';
 import { OrganizationMembership } from '../modules/organization/entities/organization-membership.entity';
 import { Post } from '../modules/post/entities/post.entity';
+import { Story } from '../modules/story/entities/story.entity';
+import { StoryView } from '../modules/story/entities/story-view.entity';
 import { Supply } from '../modules/supply/entities/supply.entity';
 import { User } from '../modules/auth/entities/user.entity';
 import { VolunteerType } from '../modules/volunteer-type/entities/volunteer-type.entity';
@@ -47,6 +49,8 @@ export const AppDataSource = new DataSource({
     DonationItem,
     OrgEvent,
     EventAttendance,
+    Story,
+    StoryView,
   ],
   migrations: [__dirname + '/migrations/public/*{.ts,.js}'],
   migrationsTableName: 'migrations',

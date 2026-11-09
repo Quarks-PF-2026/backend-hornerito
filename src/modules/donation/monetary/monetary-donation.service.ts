@@ -63,8 +63,8 @@ export interface MonetaryDonationView {
  * Conviven dos vías de acceso a datos a propósito, igual que en
  * `VolunteerRequestService`:
  *
- * - `declare` la llama un visitante **sin sesión**, así que no hay tenant que
- *   setear: usa los repositorios inyectados, que van por la conexión owner. El
+ * - `declare` la llama un visitante desde la ficha pública —con o sin sesión,
+ *   pero nunca dentro de una organización—, así que no hay tenant que setear: usa los repositorios inyectados, que van por la conexión owner. El
  *   recorte lo hace este service resolviendo la organización `validated` de la
  *   URL antes de escribir.
  * - el panel (`list`, `confirm`, `reject`) entra autenticado, con `TenantGuard`
@@ -92,11 +92,18 @@ export class MonetaryDonationService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Vía anónima: alguien declara que transfirió desde la ficha pública. */
+  /**
+   * Vía pública: alguien declara que transfirió desde la ficha. Con sesión
+   * (`donorUserId`) la donación queda asociada a la cuenta (QK-113); nombre y
+   * contacto siguen siendo los que vinieron en el formulario —el front los
+   * precarga de la cuenta y el donante puede cambiarlos solo para esta
+   * donación—, así que el perfil no se toca.
+   */
   async declare(
     organizationId: string,
     dto: CreateMonetaryDonationDto,
     file?: UploadedFile,
+    donorUserId?: string,
   ): Promise<{ id: string; status: MonetaryDonationStatus }> {
     // Mercado Pago está contemplado en el modelo (enum, `externalPaymentId`) y
     // en la UI, pero todavía no implementado. Cuando entre, acá va la creación
@@ -135,6 +142,10 @@ export class MonetaryDonationService {
         operationNumber: dto.operationNumber?.trim() || null,
         donorName: dto.donorName?.trim() || null,
         donorContact: dto.donorContact?.trim().toLowerCase() || null,
+        donorUserId: donorUserId ?? null,
+        // Sin cuenta no hay superficie pública de la que esconderse: el flag
+        // solo se guarda con sesión, para no dejar filas "anónimas" sin dueño.
+        isAnonymous: donorUserId ? (dto.isAnonymous ?? false) : false,
         receiptUrl: receipt?.url ?? null,
         receiptPublicId: receipt?.publicId ?? null,
         externalPaymentId: null,
