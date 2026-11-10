@@ -51,7 +51,7 @@ export class PublicController {
     return this.publicService.getDonor(userId);
   }
 
-  /** Con sesión, se omiten las historias que el usuario ya vio (QK-111). */
+  /** Con sesión, cada historia dice si el usuario ya la vio (QK-111, DOMAIN.md §18). */
   @Get('stories')
   @UseGuards(OptionalJwtAuthGuard)
   listStories(@CurrentUser() user: AuthenticatedUser | undefined) {

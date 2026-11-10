@@ -57,7 +57,8 @@ export interface PublicStoryGroup {
   organizationId: string;
   organizationName: string;
   organizationLogoUrl: string | null;
-  stories: StoryDto[];
+  /** `seen`: si quien mira ya la abrió; el visitante sin cuenta, siempre `false`. */
+  stories: (StoryDto & { seen: boolean })[];
 }
 
 export interface PublicLocality {
@@ -520,14 +521,16 @@ export class PublicService {
   }
 
   /**
-   * Barra de historias del inicio (QK-111, DOMAIN.md §18). Con cuenta, se
-   * omiten las que ya vio, y con ellas la organización si no le queda ninguna;
-   * sin cuenta, todas. Dentro de cada organización, de la más vieja a la más
-   * nueva (el orden en que se reproducen); las organizaciones, por su historia
-   * más reciente primero.
+   * Barra de historias del inicio (DOMAIN.md §18, regla del 2026-11-10).
+   * Siempre todas las vigentes, también con cuenta: cada una dice si el
+   * usuario ya la vio, y las organizaciones con alguna sin ver van primero
+   * (las ya vistas enteras, al final). Dentro de cada bloque, la de historia
+   * más reciente primero; dentro de cada organización, de la más vieja a la
+   * más nueva (el orden en que se reproducen).
    */
   async listStories(viewerId?: string): Promise<PublicStoryGroup[]> {
-    const stories = await this.liveStories({ viewerId });
+    const stories = await this.liveStories({});
+    const seen = await this.seenStoryIds(stories, viewerId);
     const byOrg = new Map<string, Story[]>();
     for (const story of stories) {
       byOrg.set(story.organizationId, [
@@ -550,15 +553,39 @@ export class PublicService {
     const names = new Map(organizations.map((o) => [o.id, o.name]));
 
     const latest = (list: Story[]) => list[list.length - 1].createdAt.getTime();
+    const allSeen = (list: Story[]) => list.every((s) => seen.has(s.id));
     return [...byOrg.entries()]
       .filter(([orgId]) => names.has(orgId))
-      .sort(([, a], [, b]) => latest(b) - latest(a))
+      .sort(
+        ([, a], [, b]) =>
+          Number(allSeen(a)) - Number(allSeen(b)) || latest(b) - latest(a),
+      )
       .map(([orgId, list]) => ({
         organizationId: orgId,
         organizationName: names.get(orgId)!,
         organizationLogoUrl: images.get(orgId)?.logo ?? null,
-        stories: list.map(toStoryDto),
+        stories: list.map((s) => ({ ...toStoryDto(s), seen: seen.has(s.id) })),
       }));
+  }
+
+  /**
+   * Cuáles de estas historias ya abrió el usuario. Cruza organizaciones a
+   * propósito (la barra muestra varias, §10): no hay un `organizationId` que
+   * fijar, y el acotamiento lo dan el propio `userId` y los ids, que ya pasaron
+   * por `liveStories`. Sin cuenta no se registran vistas: el set queda vacío.
+   */
+  private async seenStoryIds(
+    stories: Story[],
+    viewerId?: string,
+  ): Promise<Set<string>> {
+    if (!viewerId || stories.length === 0) {
+      return new Set();
+    }
+    const views = await this.stories.manager.find(StoryView, {
+      where: { userId: viewerId, storyId: In(stories.map((s) => s.id)) },
+      select: { storyId: true },
+    });
+    return new Set(views.map((v) => v.storyId));
   }
 
   /**
@@ -597,7 +624,6 @@ export class PublicService {
   private liveStories(filter: {
     organizationId?: string;
     storyId?: string;
-    viewerId?: string;
   }): Promise<Story[]> {
     const qb = this.stories
       .createQueryBuilder('s')
@@ -616,15 +642,6 @@ export class PublicService {
     }
     if (filter.storyId) {
       qb.andWhere('s.id = :storyId', { storyId: filter.storyId });
-    }
-    if (filter.viewerId) {
-      qb.andWhere(
-        `NOT EXISTS (
-          SELECT 1 FROM "story_views" v
-          WHERE v."storyId" = s.id AND v."userId" = :viewerId
-        )`,
-        { viewerId: filter.viewerId },
-      );
     }
     return qb.orderBy('s."createdAt"', 'ASC').getMany();
   }

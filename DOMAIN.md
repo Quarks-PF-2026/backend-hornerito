@@ -382,7 +382,7 @@ Reglas de suma comunes al ranking y al perfil público:
 
 ## 18. Historias de organización (QK-111)
 
-Confirmado con el usuario (en representación del equipo/PO) el 2026-11-08. Todas las reglas de esta sección son **[CONFIRMADO 2026-11-08, QK-111]**.
+Confirmado con el usuario (en representación del equipo/PO) el 2026-11-08. Todas las reglas de esta sección son **[CONFIRMADO 2026-11-08, QK-111]**, salvo las del inicio marcadas **[CONFIRMADO 2026-11-10]**, que reemplazan a las originales.
 
 ### Qué es y quién publica
 
@@ -406,11 +406,11 @@ Confirmado con el usuario (en representación del equipo/PO) el 2026-11-08. Toda
 
 ### Dónde se ven
 
-- **Inicio** (superficie pública entre organizaciones, §10): historias vigentes de organizaciones `validated`.
-  - **Con cuenta**: una historia ya vista **no se le muestra más** en el inicio; la organización sigue en la barra mientras le quede alguna sin ver.
+- **Inicio** (superficie pública entre organizaciones, §10): **siempre todas** las historias vigentes de organizaciones `validated`, también con cuenta (estilo Instagram). **[CONFIRMADO 2026-11-10]** — reemplaza la regla de QK-111 del 2026-11-08, que ocultaba con cuenta las historias ya vistas y sacaba de la barra a la organización sin historias sin ver.
+  - **Con cuenta**: cada historia indica si el usuario **ya la vio**. Las organizaciones con alguna historia sin ver van **primero**; las que tiene todas vistas, **al final**. Dentro de cada bloque, primero la de historia más reciente. **[CONFIRMADO 2026-11-10]**
   - Abrir la historia en el inicio **o** en el perfil de la organización la marca como vista.
   - Los miembros ven las historias de su propia organización como cualquier usuario.
 - **Perfil público de la organización**: todas sus historias vigentes, vistas o no.
-- **Visitante sin cuenta**: ve todas las vigentes; no se registran vistas ni se oculta nada.
+- **Visitante sin cuenta**: ve todas las vigentes, todas como no vistas; no se registran vistas.
 - **Panel de la organización**: las vigentes con su vencimiento y, debajo, las vencidas como **historial de solo lectura**. Las eliminadas no se muestran.
 - **Aislamiento**: en el panel, una organización solo ve y elimina **sus propias** historias (invariante 1, §11).

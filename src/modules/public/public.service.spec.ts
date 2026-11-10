@@ -81,9 +81,11 @@ describe('PublicService', () => {
   let donationCalls: Record<string, unknown[]>;
   let storyCalls: Record<string, unknown[]>;
   let storyInsert: Record<string, jest.Mock>;
+  let storyViewsFind: jest.Mock;
 
   beforeEach(() => {
     storyCalls = {};
+    storyViewsFind = jest.fn();
     storyInsert = {};
     for (const method of ['insert', 'into', 'values', 'orIgnore']) {
       storyInsert[method] = jest.fn(() => storyInsert);
@@ -103,6 +105,7 @@ describe('PublicService', () => {
     donationRows?: unknown[];
     stories?: Partial<Story>[];
     storyOrgs?: Partial<Organization>[];
+    seenStoryIds?: string[];
   }) {
     const organizations = {
       createQueryBuilder: () => fakeQueryBuilder(options.rows ?? [], calls),
@@ -147,7 +150,12 @@ describe('PublicService', () => {
     const stories = {
       createQueryBuilder: () =>
         fakeQueryBuilder(options.stories ?? [], storyCalls),
-      manager: { createQueryBuilder: () => storyInsert },
+      manager: {
+        createQueryBuilder: () => storyInsert,
+        find: storyViewsFind.mockResolvedValue(
+          (options.seenStoryIds ?? []).map((storyId) => ({ storyId })),
+        ),
+      },
     } as unknown as Repository<Story>;
 
     return new PublicService(
@@ -543,18 +551,60 @@ describe('PublicService', () => {
       expect(storyCalls.innerJoin?.[2]).toContain('o.status = :validated');
     });
 
-    it('sin sesión no filtra vistas; con sesión excluye las que el usuario ya vio', async () => {
-      await build({}).listStories();
-      expect(storyFilters().join(' ')).not.toContain('story_views');
+    describe('Dado que Ana tiene cuenta y vio todas las de Comedor B y una de Comedor A', () => {
+      const options = {
+        stories: [
+          story('a1', 'org-a', 0),
+          story('b1', 'org-b', 1),
+          story('a2', 'org-a', 2),
+          story('b2', 'org-b', 3),
+        ] as Partial<Story>[],
+        storyOrgs: [
+          { id: 'org-a', name: 'Comedor A' },
+          { id: 'org-b', name: 'Comedor B' },
+        ],
+        seenStoryIds: ['a1', 'b1', 'b2'],
+      };
 
-      storyCalls = {};
-      await build({}).listStories('user-ana');
-      expect(storyFilters()).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining('NOT EXISTS'),
-          { viewerId: 'user-ana' },
-        ]),
-      );
+      it('Entonces sigue viendo todas, cada una marcada como vista o no, y Comedor B pasa al final', async () => {
+        const groups = await build(options).listStories('user-ana');
+
+        expect(
+          groups.map((g) => [
+            g.organizationName,
+            g.stories.map((s) => [s.id, s.seen]),
+          ]),
+        ).toEqual([
+          [
+            'Comedor A',
+            [
+              ['a1', true],
+              ['a2', false],
+            ],
+          ],
+          [
+            'Comedor B',
+            [
+              ['b1', true],
+              ['b2', true],
+            ],
+          ],
+        ]);
+        expect(storyFilters().join(' ')).not.toContain('story_views');
+      });
+
+      it('Entonces un visitante sin cuenta las ve todas sin ver y no se consultan vistas', async () => {
+        const groups = await build(options).listStories();
+
+        expect(groups.map((g) => g.organizationName)).toEqual([
+          'Comedor B',
+          'Comedor A',
+        ]);
+        expect(groups.flatMap((g) => g.stories).every((s) => !s.seen)).toBe(
+          true,
+        );
+        expect(storyViewsFind).not.toHaveBeenCalled();
+      });
     });
 
     it('registrar una vista sin sesión no escribe nada', async () => {
