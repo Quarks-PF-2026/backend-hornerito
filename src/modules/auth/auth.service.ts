@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -28,9 +30,12 @@ import { VerificationMailService } from './mail/verification-mail.service';
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const PASSWORD_SALT_ROUNDS = 10;
+const MAIL_UNAVAILABLE_MESSAGE =
+  'No pudimos enviar el correo en este momento. Probá de nuevo en unos minutos.';
 
 export interface RegisterResult {
   email: string;
+  verificationMailSent: boolean;
 }
 
 export interface LoginResult {
@@ -47,6 +52,8 @@ export interface LoginResult {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepository: IUserRepository,
     @InjectRepository(OrganizationMembership)
@@ -81,9 +88,19 @@ export class AuthService {
       termsAcceptedAt: new Date(),
     });
 
-    await this.verificationMailService.send(user.email, verificationToken);
+    // Si el correo falla (p. ej. el SMTP rechaza por límite diario) no se
+    // propaga: la cuenta ya existe, y un 500 deja a la persona trabada porque
+    // reintentar el registro da 409. El reenvío desde la pantalla de
+    // verificación resuelve el caso; el flag le avisa al front que lo ofrezca.
+    let verificationMailSent = true;
+    try {
+      await this.verificationMailService.send(user.email, verificationToken);
+    } catch (err) {
+      verificationMailSent = false;
+      this.logMailFailure('verificación (registro)', user.email, err);
+    }
 
-    return { email: user.email };
+    return { email: user.email, verificationMailSent };
   }
 
   async verifyEmail(token: string): Promise<void> {
@@ -119,7 +136,9 @@ export class AuthService {
         Date.now() + VERIFICATION_TOKEN_TTL_MS,
       );
       await this.userRepository.save(user);
-      await this.verificationMailService.send(user.email, verificationToken);
+      await this.sendOrUnavailable('verificación (reenvío)', user.email, () =>
+        this.verificationMailService.send(user.email, verificationToken),
+      );
     }
     return {
       message:
@@ -229,7 +248,9 @@ export class AuthService {
         Date.now() + RESET_TOKEN_TTL_MS,
       );
       await this.userRepository.save(user);
-      await this.passwordResetMailService.send(user.email, resetPasswordToken);
+      await this.sendOrUnavailable('restablecimiento', user.email, () =>
+        this.passwordResetMailService.send(user.email, resetPasswordToken),
+      );
     }
     return {
       message:
@@ -273,5 +294,34 @@ export class AuthService {
     user.resetPasswordTokenExpiresAt = null;
 
     await this.userRepository.save(user);
+  }
+
+  /**
+   * En reenvío y olvidé-contraseña el correo ES el resultado del pedido: si
+   * falla, se responde 503 con un mensaje accionable en vez de un 500 genérico.
+   * Solo se llega acá cuando el usuario existe, así que con el SMTP caído la
+   * diferencia 200/503 revela existencia; se acepta porque la alternativa es
+   * mentir "te enviamos un enlace" cuando no salió nada.
+   */
+  private async sendOrUnavailable(
+    kind: string,
+    email: string,
+    send: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await send();
+    } catch (err) {
+      this.logMailFailure(kind, email, err);
+      throw new ServiceUnavailableException(MAIL_UNAVAILABLE_MESSAGE);
+    }
+  }
+
+  // Nunca loguear el token: con él se verifica la cuenta o se cambia la
+  // contraseña. El error de nodemailer trae la respuesta SMTP, no el cuerpo.
+  private logMailFailure(kind: string, email: string, err: unknown): void {
+    this.logger.error(
+      `Falló el envío del correo de ${kind} a ${email}`,
+      err instanceof Error ? err.stack : String(err),
+    );
   }
 }

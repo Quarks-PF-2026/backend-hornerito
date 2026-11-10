@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -100,7 +101,24 @@ describe('AuthService', () => {
         validDto.email,
         created.verificationToken,
       );
-      expect(result).toEqual({ email: validDto.email });
+      expect(result).toEqual({
+        email: validDto.email,
+        verificationMailSent: true,
+      });
+    });
+
+    it('Dado que el correo de verificación falla, cuando se registra, entonces la cuenta queda creada y responde verificationMailSent false', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.create.mockResolvedValue(makeUser());
+      mail.send.mockRejectedValue(new Error('454 Too many login attempts'));
+
+      const result = await service.register(validDto);
+
+      expect(repo.create).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        email: validDto.email,
+        verificationMailSent: false,
+      });
     });
 
     it('rejects a duplicate email', async () => {
@@ -192,6 +210,16 @@ describe('AuthService', () => {
       expect(repo.save).not.toHaveBeenCalled();
       expect(mail.send).not.toHaveBeenCalled();
       expect(result).toEqual({ message: genericMessage });
+    });
+
+    it('Dado que el envío del correo falla, cuando se reenvía la verificación, entonces responde 503 con un mensaje claro', async () => {
+      repo.findByEmail.mockResolvedValue(makeUser());
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+      mail.send.mockRejectedValue(new Error('454 Too many login attempts'));
+
+      await expect(
+        service.resendVerification({ email: 'maria@example.com' }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('does not reveal that an unknown email is not registered', async () => {
@@ -402,6 +430,18 @@ describe('AuthService', () => {
       );
       expect(resetMail.send).toHaveBeenCalledTimes(1);
       expect(res.message).toContain('Si el correo está registrado');
+    });
+
+    it('Dado que el envío del correo falla, cuando se pide restablecer la contraseña, entonces responde 503 con un mensaje claro', async () => {
+      repo.findByEmail.mockResolvedValue(makeUser());
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+      resetMail.send.mockRejectedValue(
+        new Error('454 Too many login attempts'),
+      );
+
+      await expect(
+        service.forgotPassword({ email: 'maria@example.com' }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('returns same security message when email does not exist (PU-3)', async () => {
