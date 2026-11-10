@@ -9,6 +9,16 @@ interface DonacionPersistida {
   isAnonymous: boolean;
 }
 
+interface DonacionDelHistorial {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  amount: number;
+  status: string;
+  isAnonymous: boolean;
+  createdAt: string;
+}
+
 interface DonacionDelPanel {
   id: string;
   amount: number;
@@ -67,6 +77,55 @@ defineFeature(feature, (test) => {
       .set('Authorization', mundo().auth(`responsable:${organizacion}`))
       .expect(200);
     return res.body as DonacionDelPanel[];
+  };
+
+  /** "Mis donaciones". `alias` null = visitante sin sesión. */
+  const historial = async (alias: string | null) => {
+    const req = mundo().http().get('/profile/donations');
+    if (alias) req.set('Authorization', mundo().auth(alias));
+    mundo().respuesta = await req;
+  };
+
+  const historialRecibido = (): DonacionDelHistorial[] => {
+    expect(mundo().ultimaRespuesta().status).toBe(200);
+    return mundo().ultimaRespuesta().body as DonacionDelHistorial[];
+  };
+
+  /** Precondición: una donación ya declarada con éxito desde la ficha pública. */
+  const yaDeclaro = (step: DefineStepFunction) => {
+    step(
+      /^que (.*) declaró una donación de \$(\d+) a "([^"]*)"$/,
+      async (nombre: string, monto: string, organizacion: string) => {
+        await declarar(nombre, organizacion, { amount: monto });
+        expect(mundo().ultimaRespuesta().status).toBe(201);
+      },
+    );
+  };
+
+  const entraAMisDonaciones = (step: DefineStepFunction) => {
+    step(/^(.*) entra a "Mis donaciones"$/, (nombre: string) =>
+      historial(nombre),
+    );
+  };
+
+  const veSoloLaDonacion = (step: DefineStepFunction) => {
+    step(
+      /^ve en su historial solo la donación de \$(\d+)$/,
+      (monto: string) => {
+        expect(historialRecibido().map((d) => d.amount)).toEqual([
+          Number(monto),
+        ]);
+      },
+    );
+  };
+
+  const tambienRecibe = (step: DefineStepFunction) => {
+    step(
+      /^que "(.*)" también recibe donaciones por transferencia$/,
+      async (organizacion: string) => {
+        await mundo().unaOrganizacionQueRecibeDonaciones(organizacion);
+      },
+    );
   };
 
   const antecedentes = (given: DefineStepFunction, and: DefineStepFunction) => {
@@ -290,13 +349,7 @@ defineFeature(feature, (test) => {
     then,
   }) => {
     antecedentes(given, and);
-
-    and(
-      /^que "(.*)" también recibe donaciones por transferencia$/,
-      async (organizacion: string) => {
-        await mundo().unaOrganizacionQueRecibeDonaciones(organizacion);
-      },
-    );
+    tambienRecibe(and);
 
     conSesionDeclara(when);
     conSesionDeclara(and);
@@ -379,5 +432,114 @@ defineFeature(feature, (test) => {
     conSesionDeclara(when);
     quedaRegistrada(then);
     sinCuenta(and);
+  });
+
+  test('El donante ve su historial en "Mis donaciones"', ({
+    given,
+    and,
+    when,
+    then,
+  }) => {
+    antecedentes(given, and);
+    tambienRecibe(given);
+    yaDeclaro(and);
+
+    and(
+      /^que "(.*)" confirmó que la recibió$/,
+      async (organizacion: string) => {
+        await mundo().confirmarDonacion(organizacion, ultimaDonacion());
+      },
+    );
+
+    and(
+      /^que (.*) declaró una donación anónima de \$(\d+) a "([^"]*)"$/,
+      async (nombre: string, monto: string, organizacion: string) => {
+        await declarar(nombre, organizacion, {
+          amount: monto,
+          isAnonymous: 'true',
+        });
+        expect(mundo().ultimaRespuesta().status).toBe(201);
+      },
+    );
+
+    and(
+      /^que un visitante sin sesión declaró una donación de \$(\d+) a "([^"]*)"$/,
+      async (monto: string, organizacion: string) => {
+        await declarar(null, organizacion, { amount: monto });
+        expect(mundo().ultimaRespuesta().status).toBe(201);
+      },
+    );
+
+    entraAMisDonaciones(when);
+
+    then(
+      /^ve en su historial, de la más nueva a la más vieja:$/,
+      (filas: Array<Record<string, string>>) => {
+        const estados: Record<string, string> = {
+          confirmada: 'confirmada',
+          'a confirmar': 'declarada',
+          rechazada: 'rechazada',
+        };
+        const donaciones = historialRecibido();
+        // toMatchObject sobre el array exige el mismo largo: la del visitante
+        // sin sesión no puede colarse.
+        expect(donaciones).toMatchObject(
+          filas.map((f) => ({
+            organizationId: mundo().organizacion(f['organización']),
+            amount: Number(f['monto']),
+            status: estados[f['estado']],
+            isAnonymous: f['anónima'] === 'sí',
+          })),
+        );
+        // El helper le agrega un sufijo único al nombre de la organización.
+        donaciones.forEach((d, i) =>
+          expect(d.organizationName).toContain(filas[i]['organización']),
+        );
+        const fechas = donaciones.map((d) => Date.parse(d.createdAt));
+        expect(fechas.every((t) => !Number.isNaN(t))).toBe(true);
+        expect(fechas).toEqual([...fechas].sort((a, b) => b - a));
+      },
+    );
+  });
+
+  test('Cada donante ve solo sus propias donaciones', ({
+    given,
+    and,
+    when,
+    then,
+  }) => {
+    antecedentes(given, and);
+
+    given(
+      /^que (.*) también tiene cuenta y la sesión iniciada$/,
+      async (nombre: string) => {
+        await mundo().unDonante(nombre);
+      },
+    );
+
+    yaDeclaro(and);
+    yaDeclaro(and);
+    entraAMisDonaciones(when);
+    veSoloLaDonacion(then);
+    entraAMisDonaciones(when);
+    veSoloLaDonacion(then);
+  });
+
+  test('Sin sesión no se puede ver ningún historial de donaciones', ({
+    given,
+    and,
+    when,
+    then,
+  }) => {
+    antecedentes(given, and);
+    yaDeclaro(given);
+
+    when('un visitante sin sesión intenta entrar a "Mis donaciones"', () =>
+      historial(null),
+    );
+
+    then('el sistema le pide iniciar sesión', () => {
+      expect(mundo().ultimaRespuesta().status).toBe(401);
+    });
   });
 });

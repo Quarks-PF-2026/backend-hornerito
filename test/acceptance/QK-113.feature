@@ -9,6 +9,10 @@ Característica: Donar con la sesión iniciada
   donación anónima queda asociada a la cuenta, la organización ve quién la
   hizo, pero el nombre no aparece en ningún lugar público.
 
+  En "Mis donaciones" cada donante ve su historial privado: todas las que hizo
+  con la sesión iniciada, incluidas las anónimas, las pendientes y las
+  rechazadas. Nunca ve las de otro donante.
+
   Antecedentes:
     Dado que "Comedor Los Pibes" recibe donaciones por transferencia
     Y que Ana Pérez tiene cuenta y la sesión iniciada
@@ -62,3 +66,29 @@ Característica: Donar con la sesión iniciada
     Cuando Ana Pérez declara una donación de $5000 a "Comedor Los Pibes"
     Entonces la donación queda registrada
     Y no queda asociada a ninguna cuenta
+
+  Escenario: El donante ve su historial en "Mis donaciones"
+    Dado que "Comedor La Esperanza" también recibe donaciones por transferencia
+    Y que Ana Pérez declaró una donación de $5000 a "Comedor Los Pibes"
+    Y que "Comedor Los Pibes" confirmó que la recibió
+    Y que Ana Pérez declaró una donación anónima de $3000 a "Comedor La Esperanza"
+    Y que un visitante sin sesión declaró una donación de $700 a "Comedor Los Pibes"
+    Cuando Ana Pérez entra a "Mis donaciones"
+    Entonces ve en su historial, de la más nueva a la más vieja:
+      | organización         | monto | estado      | anónima |
+      | Comedor La Esperanza | 3000  | a confirmar | sí      |
+      | Comedor Los Pibes    | 5000  | confirmada  | no      |
+
+  Escenario: Cada donante ve solo sus propias donaciones
+    Dado que Bruno Díaz también tiene cuenta y la sesión iniciada
+    Y que Ana Pérez declaró una donación de $5000 a "Comedor Los Pibes"
+    Y que Bruno Díaz declaró una donación de $2000 a "Comedor Los Pibes"
+    Cuando Ana Pérez entra a "Mis donaciones"
+    Entonces ve en su historial solo la donación de $5000
+    Cuando Bruno Díaz entra a "Mis donaciones"
+    Entonces ve en su historial solo la donación de $2000
+
+  Escenario: Sin sesión no se puede ver ningún historial de donaciones
+    Dado que Ana Pérez declaró una donación de $5000 a "Comedor Los Pibes"
+    Cuando un visitante sin sesión intenta entrar a "Mis donaciones"
+    Entonces el sistema le pide iniciar sesión
