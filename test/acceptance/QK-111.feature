@@ -7,9 +7,10 @@ Característica: Historias de organización
   Una historia está vigente 7 días desde que se publica. Publican el dueño,
   los administradores y los coordinadores; los voluntarios no. Una
   organización puede tener hasta 20 historias vigentes. Las historias se ven
-  en la barra del inicio y en el perfil público de la organización; quien
-  tiene cuenta deja de ver en el inicio las que ya vio. Las vencidas y las
-  eliminadas dejan de mostrarse, pero quedan registradas.
+  en la barra del inicio y en el perfil público de la organización. Quien
+  tiene cuenta sigue viendo en el inicio las que ya vio, marcadas como vistas,
+  y las organizaciones que ya vio enteras pasan al final de su barra. Las
+  vencidas y las eliminadas dejan de mostrarse, pero quedan registradas.
 
   Escenario: Publicar una historia con imagen y texto
     Dado que Comedor Los Pibes es una organización validada
@@ -35,20 +36,24 @@ Característica: Historias de organización
     Cuando el responsable de Comedor Los Pibes publica una historia con una imagen WEBP de 1 MB, el texto "Sumate el sábado" y el enlace "https://comedorlospibes.org/sabado"
     Entonces la historia queda publicada con el texto "Sumate el sábado" y el enlace "https://comedorlospibes.org/sabado"
 
-  Escenario: Quien tiene cuenta deja de ver en el inicio la historia que ya vio
+  Escenario: Quien tiene cuenta sigue viendo en el inicio la historia que ya vio, marcada como vista
     Dado que Comedor Los Pibes publicó 2 historias
     Y que Ana Pérez tiene cuenta
     Cuando Ana Pérez mira la primera historia de Comedor Los Pibes en el inicio
-    Entonces en el inicio, Ana Pérez ya no ve la primera historia de Comedor Los Pibes
+    Entonces en el inicio, Ana Pérez ve la primera historia de Comedor Los Pibes marcada como vista
+    Y en el inicio, Ana Pérez ve la segunda historia de Comedor Los Pibes sin ver
     Y en el inicio, Ana Pérez ve a Comedor Los Pibes con 1 historia sin ver
 
-  Escenario: Cuando vio todas, la organización sale de su barra pero no de la de los demás
+  Escenario: Cuando vio todas, la organización pasa al final de su barra pero no de la de los demás
     Dado que Comedor Los Pibes publicó 1 historia
+    Y que Comedor La Esperanza publicó 1 historia
     Y que Ana Pérez tiene cuenta
     Y que Bruno Díaz tiene cuenta
-    Cuando Ana Pérez mira la primera historia de Comedor Los Pibes en el inicio
-    Entonces en el inicio, Ana Pérez ya no ve a Comedor Los Pibes
-    Y en el inicio, Bruno Díaz ve a Comedor Los Pibes con 1 historia sin ver
+    Cuando Ana Pérez mira la primera historia de Comedor La Esperanza en el inicio
+    Entonces en el inicio, Ana Pérez ve a Comedor La Esperanza con 0 historias sin ver
+    Y en el inicio, Ana Pérez ve a Comedor Los Pibes antes que a Comedor La Esperanza
+    Y en el inicio, Bruno Díaz ve a Comedor La Esperanza con 1 historia sin ver
+    Y en el inicio, Bruno Díaz ve a Comedor La Esperanza antes que a Comedor Los Pibes
 
   Escenario: El perfil de la organización sigue mostrando la historia ya vista
     Dado que Comedor Los Pibes publicó 1 historia
@@ -60,7 +65,7 @@ Característica: Historias de organización
     Dado que Comedor Los Pibes publicó 2 historias
     Y que Ana Pérez tiene cuenta
     Cuando Ana Pérez abre la primera historia de Comedor Los Pibes desde su perfil
-    Entonces en el inicio, Ana Pérez ya no ve la primera historia de Comedor Los Pibes
+    Entonces en el inicio, Ana Pérez ve la primera historia de Comedor Los Pibes marcada como vista
     Y en el inicio, Ana Pérez ve a Comedor Los Pibes con 1 historia sin ver
 
   Escenario: A los 7 días la historia vence y pasa al historial del panel

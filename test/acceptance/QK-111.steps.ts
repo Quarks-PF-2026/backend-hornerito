@@ -22,6 +22,8 @@ interface Historia {
   linkUrl: string | null;
   createdAt: string;
   expiresAt: string;
+  /** Solo en la barra del inicio: si quien mira ya la vio (el visitante, nunca). */
+  seen?: boolean;
 }
 
 interface OrgEnLaBarra {
@@ -349,12 +351,21 @@ const steps: StepDefinitions = ({ given, when, then }) => {
 
   then(
     new RegExp(
-      `^en el inicio, ${ACTOR} (ve|(?:ya )?no ve) la (primera|segunda|nueva) historia de (.*)$`,
+      `^en el inicio, ${ACTOR} (ve|no ve) la (primera|segunda|nueva) historia de (.*?)(?: (marcada como vista|sin ver))?$`,
     ),
-    async (actor: string, verbo: string, orden: Orden, org: string) => {
-      const visibles = (await inicio(actor)).flatMap((o) => ids(o.stories));
-      if (verbo === 've') expect(visibles).toContain(historia(org, orden));
-      else expect(visibles).not.toContain(historia(org, orden));
+    async (
+      actor: string,
+      verbo: string,
+      orden: Orden,
+      org: string,
+      marca?: string,
+    ) => {
+      const id = historia(org, orden);
+      const enLaBarra = (await inicio(actor)).flatMap((o) => o.stories);
+      const vista = enLaBarra.find((h) => h.id === id);
+      if (verbo === 'no ve') return expect(vista).toBeUndefined();
+      expect(vista).toBeDefined();
+      if (marca) expect(vista!.seen).toBe(marca === 'marcada como vista');
     },
   );
 
@@ -367,12 +378,23 @@ const steps: StepDefinitions = ({ given, when, then }) => {
         (o) => o.organizationId === mundo().organizacion(org),
       );
       expect(enLaBarra).toBeDefined();
-      expect(enLaBarra!.stories).toHaveLength(Number(n));
+      expect(enLaBarra!.stories.filter((h) => !h.seen)).toHaveLength(Number(n));
     },
   );
 
   then(
-    new RegExp(`^en el inicio, ${ACTOR} (?:ya )?no ve a (.*)$`),
+    new RegExp(`^en el inicio, ${ACTOR} ve a (.*) antes que a (.*)$`),
+    async (actor: string, primera: string, despues: string) => {
+      const orgs = (await inicio(actor)).map((o) => o.organizationId);
+      const a = orgs.indexOf(mundo().organizacion(primera));
+      const b = orgs.indexOf(mundo().organizacion(despues));
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(b).toBeGreaterThan(a);
+    },
+  );
+
+  then(
+    new RegExp(`^en el inicio, ${ACTOR} no ve a (.*)$`),
     async (actor: string, org: string) => {
       const orgs = (await inicio(actor)).map((o) => o.organizationId);
       expect(orgs).not.toContain(mundo().organizacion(org));
