@@ -23,7 +23,7 @@ import {
   detectImageMime,
 } from '../../media/media-purposes';
 import { UploadedFile } from '../../media/media.service';
-import { User } from '../../auth/entities/user.entity';
+import { AccountType, User } from '../../auth/entities/user.entity';
 import {
   MEMBER_MANAGER_ROLES,
   OrganizationMembership,
@@ -129,6 +129,17 @@ export class MonetaryDonationService {
       );
     }
 
+    // Una cuenta de organización que dona lo hace en nombre de su organización,
+    // no como persona: se registra como si no hubiera sesión, así nunca entra
+    // en el ranking ni en el perfil de donante.
+    const donorAccount = donorUserId
+      ? await this.users.findOneBy({ id: donorUserId })
+      : null;
+    const sessionUserId =
+      donorAccount?.accountType === AccountType.ORGANIZATION
+        ? undefined
+        : donorUserId;
+
     const receipt = file
       ? await this.uploadReceipt(organizationId, file)
       : null;
@@ -142,10 +153,10 @@ export class MonetaryDonationService {
         operationNumber: dto.operationNumber?.trim() || null,
         donorName: dto.donorName?.trim() || null,
         donorContact: dto.donorContact?.trim().toLowerCase() || null,
-        donorUserId: donorUserId ?? null,
+        donorUserId: sessionUserId ?? null,
         // Sin cuenta no hay superficie pública de la que esconderse: el flag
         // solo se guarda con sesión, para no dejar filas "anónimas" sin dueño.
-        isAnonymous: donorUserId ? (dto.isAnonymous ?? false) : false,
+        isAnonymous: sessionUserId ? (dto.isAnonymous ?? false) : false,
         receiptUrl: receipt?.url ?? null,
         receiptPublicId: receipt?.publicId ?? null,
         externalPaymentId: null,

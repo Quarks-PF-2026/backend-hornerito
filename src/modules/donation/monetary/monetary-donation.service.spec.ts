@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { MailService } from '../../mail/mail.service';
 import { CloudinaryService } from '../../media/cloudinary.service';
 import { UploadedFile } from '../../media/media.service';
-import { User } from '../../auth/entities/user.entity';
+import { AccountType, User } from '../../auth/entities/user.entity';
 import {
   OrganizationMembership,
   OrganizationMembershipRole,
@@ -97,7 +97,7 @@ describe('MonetaryDonationService', () => {
   let tenantRepo: { findOneBy: jest.Mock; find: jest.Mock; save: jest.Mock };
   let organizationRepo: { findOneBy: jest.Mock };
   let membershipRepo: { find: jest.Mock };
-  let userRepo: { find: jest.Mock };
+  let userRepo: { find: jest.Mock; findOneBy: jest.Mock };
   let cloudinary: { upload: jest.Mock };
   let mail: { send: jest.Mock };
 
@@ -122,7 +122,12 @@ describe('MonetaryDonationService', () => {
       findOneBy: jest.fn().mockResolvedValue(makeOrganization()),
     };
     membershipRepo = { find: jest.fn().mockResolvedValue([]) };
-    userRepo = { find: jest.fn().mockResolvedValue([]) };
+    userRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOneBy: jest
+        .fn()
+        .mockResolvedValue({ id: 'user-ana', accountType: AccountType.DONOR }),
+    };
     cloudinary = {
       upload: jest.fn().mockResolvedValue({
         url: 'https://cdn/comprobante.png',
@@ -223,6 +228,24 @@ describe('MonetaryDonationService', () => {
             donorName: 'Ana Pérez',
             donorContact: 'ana@mail.com',
           }),
+        );
+      });
+
+      it('dado una cuenta de organización con sesión, cuando declara, entonces se registra como si no hubiera sesión', async () => {
+        userRepo.findOneBy.mockResolvedValue({
+          id: 'user-org',
+          accountType: AccountType.ORGANIZATION,
+        });
+
+        await service.declare(
+          'org-1',
+          dtoWith({ donorName: 'Comedor Vecino', isAnonymous: true }),
+          undefined,
+          'user-org',
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ donorUserId: null, isAnonymous: false }),
         );
       });
 

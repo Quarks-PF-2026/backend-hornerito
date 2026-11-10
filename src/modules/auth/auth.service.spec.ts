@@ -10,7 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
-import { User } from './entities/user.entity';
+import { AccountType, User } from './entities/user.entity';
 import {
   OrganizationMembership,
   OrganizationMembershipRole,
@@ -28,6 +28,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     passwordHash: 'hashed',
     emailVerified: false,
     isPlatformAdmin: false,
+    accountType: AccountType.DONOR,
     verificationToken: 'valid-token',
     verificationTokenExpiresAt: new Date(Date.now() + 60_000),
     resetPasswordToken: null,
@@ -119,6 +120,29 @@ describe('AuthService', () => {
         email: validDto.email,
         verificationMailSent: false,
       });
+    });
+
+    it('Dado un registro sin tipo de cuenta, cuando se crea, entonces la cuenta nace donante', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.create.mockResolvedValue(makeUser());
+
+      await service.register(validDto);
+
+      expect(repo.create.mock.calls[0][0].accountType).toBe(AccountType.DONOR);
+    });
+
+    it('Dado un registro que elige cuenta de organización, cuando se crea, entonces la cuenta nace de organización', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.create.mockResolvedValue(makeUser());
+
+      await service.register({
+        ...validDto,
+        accountType: AccountType.ORGANIZATION,
+      });
+
+      expect(repo.create.mock.calls[0][0].accountType).toBe(
+        AccountType.ORGANIZATION,
+      );
     });
 
     it('rejects a duplicate email', async () => {
@@ -280,6 +304,7 @@ describe('AuthService', () => {
           email: user.email,
           phone: user.phone,
           isPlatformAdmin: false,
+          accountType: AccountType.DONOR,
         },
         role: null,
       });

@@ -37,6 +37,9 @@ export async function registerAndLogin(
   app: INestApplication,
   email: string,
   password = DEFAULT_PASSWORD,
+  // Default 'organization' porque casi todos los callers crean una
+  // organización a continuación, y una cuenta de donante no puede.
+  accountType: 'donor' | 'organization' = 'organization',
 ): Promise<Session> {
   await request(app.getHttpServer()).post('/auth/register').send({
     name: 'Usuario de prueba',
@@ -44,6 +47,7 @@ export async function registerAndLogin(
     password,
     confirmPassword: password,
     acceptedTerms: true,
+    accountType,
   });
 
   // El login exige la cuenta verificada, así que recorremos el flujo real:

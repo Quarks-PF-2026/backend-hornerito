@@ -2,10 +2,13 @@ import {
   Equals,
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
+import { AccountType } from '../entities/user.entity';
 
 export class RegisterDto {
   @IsString()
@@ -24,4 +27,10 @@ export class RegisterDto {
   @IsBoolean()
   @Equals(true, { message: 'Tenés que aceptar los términos y condiciones.' })
   acceptedTerms: boolean;
+
+  // Opcional para no romper clientes que no lo mandan: sin dato, la cuenta
+  // nace donante, que es el caso mayoritario.
+  @IsOptional()
+  @IsEnum(AccountType, { message: 'Elegí un tipo de cuenta válido.' })
+  accountType?: AccountType;
 }

@@ -50,6 +50,7 @@ Plataforma web donde organizaciones sociales (comedores, merenderos, ONGs) publi
 | **Punto de recolección** | Lugar físico donde la organización recibe donaciones, con horarios y ubicación. |
 | **Publicación** (*post*) | Novedad que la organización difunde. |
 | **Historia** (*story*) | **[CONFIRMADO 2026-11-08, QK-111]** Imagen o video corto de una organización, con texto opcional encima y enlace opcional, **vigente 7 días** desde su publicación. No confundir con la user story de Jira (§14). Detalle en §18. |
+| **Tipo de cuenta** | **[CONFIRMADO]** (2026-11-10) `donor` u `organization`, elegido al registrarse. Atributo de la persona, no de una membresía. Detalle en §3. |
 | **Membresía** | Vínculo entre una persona y una organización, con un rol. |
 | **Invitación** | Token con vencimiento por el cual una organización suma a alguien. |
 | **Evento** | Ocasión de servicio de una organización: periódico (en días de la semana elegidos) o extraordinario (fecha puntual), con hora de comienzo. Detalle en §16. |
@@ -77,6 +78,18 @@ Consecuencia de diseño: el modelo de donación **no debe asumir que el donante 
 - Un **perfil público de donante** (QK-110, §17).
 
 Donar con cuenta **no requiere ser miembro** de la organización: es un vínculo distinto de la membresía.
+
+#### Tipo de cuenta
+
+**[CONFIRMADO]** (2026-11-10) Reglas del tipo de cuenta:
+
+- Se elige **al registrarse**: `donor` (por defecto; los donantes son la mayoría) u `organization`.
+- **Las cuentas no se mezclan**: el tipo es un atributo de la persona, como el administrador de plataforma, no una membresía.
+- Una cuenta `donor` **no crea organizaciones**. Para gestionar un comedor se registra una cuenta `organization` (con otro correo, si ya se tiene una `donor`) (§4).
+- Un `donor` invitado por una organización **puede aceptar** y queda miembro con el rol de la invitación; su cuenta **sigue siendo `donor`** (§5).
+- Un usuario que se crea al aceptar una invitación **nace `organization`** (§5).
+- Solo una cuenta `donor` asocia donaciones económicas: la de una cuenta `organization` se registra como si no hubiera sesión y **nunca** figura en el ranking ni como perfil público (§7, §17).
+- **Migración**: los usuarios existentes con alguna membresía o dueños de una organización quedaron `organization`; el resto, `donor`.
 
 **[A DEFINIR]** Historial propio de lo donado, seguir organizaciones y comprometerse a donar. Fuera de esta iteración.
 
@@ -108,6 +121,7 @@ pending ──validar──> validated
 - **[CONFIRMADO]** La validación es **discrecional**: el administrador revisa que la organización exista y que sus datos sean creíbles, y decide. No hay checklist formal ni documentación obligatoria.
 - **[CONFIRMADO]** Una organización **rechazada puede volver a postularse**: corrige y vuelve a `pending`. El rechazo no es terminal. Vuelve a `pending` **únicamente cuando el `owner` corrige sus datos** (2026-09-13, QK-19).
 - **[CONFIRMADO]** Una organización **nace `pending`** (2026-09-13, QK-19).
+- **[CONFIRMADO]** (2026-11-10) Solo una cuenta `organization` crea una organización; una `donor` no (§3, tipo de cuenta).
 - **Una organización que no está `validated` no opera**: nada del plano de organización le funciona.
 
 ### Validación (QK-19)
@@ -123,8 +137,9 @@ Confirmado con el usuario el 2026-09-13.
 ## 5. Cuentas y acceso
 
 - El alta exige aceptar los términos y **verificar el correo**. Sin verificar no hay login. El token vence.
+- **[CONFIRMADO]** (2026-11-10) En el alta se elige el **tipo de cuenta**, `donor` por defecto (§3).
 - Recuperación de contraseña por correo, con token y vencimiento.
-- Se suma gente por **invitación**: token con vencimiento y el rol ya definido.
+- Se suma gente por **invitación**: token con vencimiento y el rol ya definido. **[CONFIRMADO]** (2026-11-10) Un `donor` puede aceptarla y conserva su tipo de cuenta; quien se registra al aceptarla nace `organization` (§3).
 - Los permisos se **revalidan en cada request**. Si a alguien le bajan el rol, aplica de inmediato y no cuando expire su sesión.
 - Una persona puede pertenecer a más de una organización y cambiar de contexto entre ellas.
 
@@ -188,6 +203,7 @@ Confirmado con el usuario el 2026-11-08.
 
   La confirma o rechaza un `owner` o `admin` de la organización, **contra el extracto**. La donación presencial sigue sin estados.
 - **[CONFIRMADO]** (QK-113) Declarada **con sesión iniciada**, queda **asociada a la cuenta** del donante. No requiere ser miembro de la organización. **No es retroactiva**: las donaciones declaradas antes, o sin sesión, no se asocian.
+- **[CONFIRMADO]** (2026-11-10) Esto vale solo para cuentas `donor`. Declarada desde una cuenta `organization` con sesión, se registra **como si no hubiera sesión**: no se asocia a la cuenta (§3).
 - **[CONFIRMADO]** (QK-113) Con sesión, nombre y contacto vienen **precargados de la cuenta**; se pueden editar **solo para esa donación**, sin tocar el perfil.
 - **[CONFIRMADO]** (QK-113) Sin sesión se dona como antes.
 - **[CONFIRMADO]** (QK-113) **Anónima con sesión**: queda asociada a la cuenta igual, y la **organización sigue viendo nombre y contacto** en su panel. "Anónima" significa **anónima frente al público**, no sin datos: ninguna superficie pública muestra su nombre (ranking y perfil la excluyen, §17).
@@ -298,6 +314,8 @@ test/acceptance/QK-NN.feature   la verificación
 feat(alcance): ... (QK-NN)      el cambio
 ```
 
+> **Excepción registrada** (decisión del usuario, 2026-11-10): el **tipo de cuenta** (§3) se implementó **sin user story propia en Jira ni escenario de aceptación**. Lo cubren tests unitarios y de integración (`test/account-type.e2e-spec.ts`).
+
 **[CONFIRMADO]** Las ramas son **por funcionalidad, con nombre conceptual**, no por historia: `necesidad`, `organizacion`, `publicacion`, `donacion`. Varias historias de la misma funcionalidad comparten rama.
 
 **[CONFIRMADO]** **No hace falta aprobación para mergear a `develop`**: cada uno mergea lo suyo.
@@ -361,6 +379,7 @@ Confirmado con el usuario el 2026-11-08.
 Reglas de suma comunes al ranking y al perfil público:
 
 - **[CONFIRMADO]** Solo **donaciones económicas confirmadas** (§7), **asociadas a una cuenta**, **no anónimas**, a **organizaciones publicadas** (`validated`). Las rechazadas nunca cuentan.
+- **[CONFIRMADO]** (2026-11-10) Una cuenta `organization` **nunca** figura en el ranking ni tiene perfil público de donante: sus donaciones no se asocian (§7).
 - **[CONFIRMADO]** Mes **calendario en hora Argentina**. La donación cuenta en el mes de su **declaración** (fecha de registro), aunque se confirme después.
 - **[CONFIRMADO]** Solo económicas: el ranking de insumos queda fuera hasta que se pueda identificar al donante presencial.
 

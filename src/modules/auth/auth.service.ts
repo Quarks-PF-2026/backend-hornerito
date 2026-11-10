@@ -17,7 +17,7 @@ import {
   OrganizationMembership,
   OrganizationMembershipRole,
 } from '../organization/entities/organization-membership.entity';
-import { User } from './entities/user.entity';
+import { AccountType, User } from './entities/user.entity';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -46,6 +46,7 @@ export interface LoginResult {
     email: string;
     phone: string | null;
     isPlatformAdmin: boolean;
+    accountType: AccountType;
   };
   role: OrganizationMembershipRole | null;
 }
@@ -86,6 +87,7 @@ export class AuthService {
         Date.now() + VERIFICATION_TOKEN_TTL_MS,
       ),
       termsAcceptedAt: new Date(),
+      accountType: dto.accountType ?? AccountType.DONOR,
     });
 
     // Si el correo falla (p. ej. el SMTP rechaza por límite diario) no se
@@ -234,6 +236,9 @@ export class AuthService {
         // a /profile solo para mostrar el teléfono después de loguear.
         phone: user.phone,
         isPlatformAdmin: user.isPlatformAdmin,
+        // Solo para que el front adapte la UI; la regla la hace cumplir el
+        // backend leyendo el usuario de la base, no el token.
+        accountType: user.accountType,
       },
       role: role ?? null,
     };
