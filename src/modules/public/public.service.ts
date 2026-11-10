@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { TODAY_AR, toIsoDate } from '../../common/today-ar';
-import { User } from '../auth/entities/user.entity';
+import { AccountType, User } from '../auth/entities/user.entity';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
 import { currentMonthRange, utcLiteral } from '../donation/date-range';
 import { DonationKind } from '../donation/entities/donation.entity';
@@ -731,21 +731,33 @@ export class PublicService {
    * email y teléfono nunca se seleccionan.
    */
   private countedDonations() {
-    return this.donations
-      .createQueryBuilder('d')
-      .innerJoin(
-        Organization,
-        'o',
-        'o.id = d."organizationId" AND o.status = :validated',
-        { validated: OrganizationStatus.VALIDATED },
-      )
-      .innerJoin(User, 'u', 'u.id = d."donorUserId"')
-      .where('d."kind" = :kind', { kind: DonationKind.ECONOMICA })
-      .andWhere('d."status" = :confirmed', {
-        confirmed: MonetaryDonationStatus.CONFIRMADA,
-      })
-      .andWhere('d."donorUserId" IS NOT NULL')
-      .andWhere('d."isAnonymous" = false');
+    return (
+      this.donations
+        .createQueryBuilder('d')
+        .innerJoin(
+          Organization,
+          'o',
+          'o.id = d."organizationId" AND o.status = :validated',
+          { validated: OrganizationStatus.VALIDATED },
+        )
+        // Solo cuentas donante: las donaciones previas a la separación de tipos
+        // pueden traer el id de una cuenta que la migración pasó a organización,
+        // y esa cuenta nunca figura en el ranking ni tiene perfil (DOMAIN §17).
+        .innerJoin(
+          User,
+          'u',
+          'u.id = d."donorUserId" AND u."accountType" = :donor',
+          {
+            donor: AccountType.DONOR,
+          },
+        )
+        .where('d."kind" = :kind', { kind: DonationKind.ECONOMICA })
+        .andWhere('d."status" = :confirmed', {
+          confirmed: MonetaryDonationStatus.CONFIRMADA,
+        })
+        .andWhere('d."donorUserId" IS NOT NULL')
+        .andWhere('d."isAnonymous" = false')
+    );
   }
 
   /** Logo y portada de cada organización, leídos de `media`. */

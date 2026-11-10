@@ -17,6 +17,7 @@ import { Post } from '../post/entities/post.entity';
 import { Story } from '../story/entities/story.entity';
 import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
 import { VolunteerOpportunity } from '../volunteering/entities/volunteer-opportunity.entity';
+import { AccountType, User } from '../auth/entities/user.entity';
 import { PublicService } from './public.service';
 
 /** Query builder encadenable que registra los argumentos de cada método. */
@@ -364,6 +365,13 @@ describe('PublicService', () => {
         'o',
         'o.id = d."organizationId" AND o.status = :validated',
         { validated: OrganizationStatus.VALIDATED },
+      ]);
+      // Una cuenta de organización nunca figura como donante (DOMAIN §17).
+      expect(donationCalls['innerJoin:all']).toContainEqual([
+        User,
+        'u',
+        'u.id = d."donorUserId" AND u."accountType" = :donor',
+        { donor: AccountType.DONOR },
       ]);
       expect(donationFilters()).toEqual(
         expect.arrayContaining([
