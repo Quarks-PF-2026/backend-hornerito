@@ -226,6 +226,19 @@ describe('PublicService', () => {
     );
   });
 
+  it('el feed ordena por vencimiento, luego la menos cubierta y n.id para paginar estable', async () => {
+    const service = build({ rows: [] });
+    await service.listNeeds({});
+    expect(calls.orderBy).toEqual(['n."deadline"', 'ASC']);
+    expect(calls['addOrderBy:all']).toEqual([
+      [
+        'CAST(n."coveredQuantity" AS float) / NULLIF(n."requiredQuantity", 0)',
+        'ASC',
+      ],
+      ['n.id', 'ASC'],
+    ]);
+  });
+
   it('con withinDays pide solo las que vencen entre hoy y hoy + N, en fecha de Argentina', async () => {
     const service = build({ rows: [] });
     await service.listNeeds({ withinDays: 7 });
