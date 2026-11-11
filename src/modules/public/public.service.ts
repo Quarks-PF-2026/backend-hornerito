@@ -278,7 +278,16 @@ export class PublicService {
       .addSelect('n."requiredQuantity"', 'requiredQuantity')
       .addSelect('n."coveredQuantity"', 'coveredQuantity')
       .addSelect('n."deadline"', 'deadline')
+      // Lo más urgente primero; entre las que vencen el mismo día, la menos
+      // cubierta (más relevante). n.id cierra el orden: sin una clave única,
+      // LIMIT/OFFSET puede repetir o saltear filas entre páginas del carrusel.
+      // NULLIF: requiredQuantity > 0 lo valida el DTO, no un CHECK en la base.
       .orderBy('n."deadline"', 'ASC')
+      .addOrderBy(
+        'CAST(n."coveredQuantity" AS float) / NULLIF(n."requiredQuantity", 0)',
+        'ASC',
+      )
+      .addOrderBy('n.id', 'ASC')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .getRawMany<{
