@@ -362,7 +362,12 @@ export class MonetaryDonationService {
    * (la organización ya está `validated`, si no el panel no opera). El tipo de
    * cuenta se relee porque una donación previa a la separación de tipos puede
    * traer el id de una cuenta que la migración pasó a `organization`, y esa no
-   * tiene perfil (§3, §17). Va por el repo owner: `users` no es del tenant.
+   * tiene perfil (§3, §17).
+   *
+   * Va por la conexión del tenant, no por el repo owner: el request ya retiene
+   * una conexión (TenantContextInterceptor) y pedir otra al pool puede agotarlo
+   * con requests concurrentes. `users` es global, sin RLS, y `hornerito_app`
+   * tiene SELECT sobre ella (ColumnBasedTenancy).
    */
   private async donorProfiles(
     donations: MonetaryDonation[],
@@ -374,13 +379,16 @@ export class MonetaryDonationService {
         d.donorUserId,
     );
     if (!eligible.length) return new Set();
-    const donors = await this.users.find({
-      where: {
-        id: In([...new Set(eligible.map((d) => d.donorUserId))]),
-        accountType: AccountType.DONOR,
-      },
-      select: { id: true },
-    });
+    const donors = await this.tenantContext
+      .getManager()
+      .getRepository(User)
+      .find({
+        where: {
+          id: In([...new Set(eligible.map((d) => d.donorUserId))]),
+          accountType: AccountType.DONOR,
+        },
+        select: { id: true },
+      });
     const donorIds = new Set(donors.map((u) => u.id));
     // Por donación, no por cuenta: otra fila del mismo donante (pendiente,
     // anónima) no hereda el enlace.
