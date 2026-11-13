@@ -489,5 +489,83 @@ describe('MonetaryDonationService', () => {
       ];
       expect(args.order).toEqual({ createdAt: 'DESC' });
     });
+
+    describe('enlace al perfil público del donante (QK-110)', () => {
+      const confirmed = { status: MonetaryDonationStatus.CONFIRMADA };
+
+      it('dada una confirmada, no anónima, de una cuenta donante, entonces expone el id para enlazar su perfil', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({ ...confirmed, donorUserId: 'user-ana' }),
+        ]);
+        userRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBe('user-ana');
+        const [args] = userRepo.find.mock.calls[0] as [
+          { where: { accountType: AccountType } },
+        ];
+        expect(args.where.accountType).toBe(AccountType.DONOR);
+      });
+
+      it('dada una anónima, entonces nunca expone el enlace aunque el donante tenga perfil', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({
+            ...confirmed,
+            donorUserId: 'user-ana',
+            isAnonymous: true,
+          }),
+        ]);
+        userRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBeNull();
+      });
+
+      it('dada una pendiente del mismo donante, entonces no hereda el enlace de otra fila confirmada', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({ ...confirmed, id: 'd-1', donorUserId: 'user-ana' }),
+          makeDonation({ id: 'd-2', donorUserId: 'user-ana' }),
+        ]);
+        userRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const rows = await service.list();
+
+        expect(rows.map((r) => r.donorProfileId)).toEqual(['user-ana', null]);
+      });
+
+      it('dada una confirmada de una cuenta que pasó a organización, entonces no expone el enlace', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({ ...confirmed, donorUserId: 'user-org' }),
+        ]);
+        // El filtro por tipo de cuenta la descarta.
+        userRepo.find.mockResolvedValue([]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBeNull();
+      });
+
+      it('sin ninguna donación enlazable no consulta cuentas', async () => {
+        tenantRepo.find.mockResolvedValue([makeDonation()]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBeNull();
+        expect(userRepo.find).not.toHaveBeenCalled();
+      });
+
+      it('al confirmar, la respuesta ya trae el enlace', async () => {
+        tenantRepo.findOneBy.mockResolvedValue(
+          makeDonation({ donorUserId: 'user-ana' }),
+        );
+        userRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const result = await service.confirm('donation-1', 'user-1');
+
+        expect(result.donorProfileId).toBe('user-ana');
+      });
+    });
   });
 });
