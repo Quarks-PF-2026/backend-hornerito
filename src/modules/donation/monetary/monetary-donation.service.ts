@@ -8,7 +8,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MailMessage, MailService } from '../../mail/mail.service';
 import {
@@ -52,6 +52,12 @@ export interface MonetaryDonationView {
   receiptUrl: string | null;
   donorName: string | null;
   donorContact: string | null;
+  /**
+   * Id para enlazar el perfil público del donante (QK-110), solo cuando esta
+   * misma donación ya garantiza que el perfil existe (DOMAIN §17). En otro caso
+   * `null`: nunca para una anónima, aunque el panel vea su nombre (§7).
+   */
+  donorProfileId: string | null;
   rejectReason: string | null;
   decidedAt: Date | null;
   createdAt: Date;
@@ -186,7 +192,8 @@ export class MonetaryDonationService {
       },
       order: { createdAt: 'DESC' },
     });
-    return rows.map(toView);
+    const profiles = await this.donorProfiles(rows);
+    return rows.map((row) => toView(row, profiles));
   }
 
   async confirm(id: string, userId: string): Promise<MonetaryDonationView> {
@@ -224,7 +231,9 @@ export class MonetaryDonationService {
 
     await this.notifyDecided(saved);
 
-    return toView(saved);
+    // Confirmar es justo lo que vuelve enlazable al donante: el front reemplaza
+    // la fila con esta respuesta, así que tiene que traer el id ya resuelto.
+    return toView(saved, await this.donorProfiles([saved]));
   }
 
   private async uploadReceipt(
@@ -347,6 +356,39 @@ export class MonetaryDonationService {
     }
   }
 
+  /**
+   * Donaciones que garantizan el perfil público de su donante: las
+   * mismas reglas que `PublicService.countedDonations()` aplicadas a la fila
+   * (la organización ya está `validated`, si no el panel no opera). El tipo de
+   * cuenta se relee porque una donación previa a la separación de tipos puede
+   * traer el id de una cuenta que la migración pasó a `organization`, y esa no
+   * tiene perfil (§3, §17). Va por el repo owner: `users` no es del tenant.
+   */
+  private async donorProfiles(
+    donations: MonetaryDonation[],
+  ): Promise<Set<string>> {
+    const eligible = donations.filter(
+      (d) =>
+        d.status === MonetaryDonationStatus.CONFIRMADA &&
+        !d.isAnonymous &&
+        d.donorUserId,
+    );
+    if (!eligible.length) return new Set();
+    const donors = await this.users.find({
+      where: {
+        id: In([...new Set(eligible.map((d) => d.donorUserId))]),
+        accountType: AccountType.DONOR,
+      },
+      select: { id: true },
+    });
+    const donorIds = new Set(donors.map((u) => u.id));
+    // Por donación, no por cuenta: otra fila del mismo donante (pendiente,
+    // anónima) no hereda el enlace.
+    return new Set(
+      eligible.filter((d) => donorIds.has(d.donorUserId!)).map((d) => d.id),
+    );
+  }
+
   private get orgId(): string {
     return this.tenantContext.organizationId;
   }
@@ -356,7 +398,10 @@ export class MonetaryDonationService {
   }
 }
 
-function toView(donation: MonetaryDonation): MonetaryDonationView {
+function toView(
+  donation: MonetaryDonation,
+  donorProfiles: Set<string>,
+): MonetaryDonationView {
   return {
     id: donation.id,
     amount: donation.amount,
@@ -366,6 +411,9 @@ function toView(donation: MonetaryDonation): MonetaryDonationView {
     receiptUrl: donation.receiptUrl,
     donorName: donation.donorName,
     donorContact: donation.donorContact,
+    donorProfileId: donorProfiles.has(donation.id)
+      ? donation.donorUserId
+      : null,
     rejectReason: donation.rejectReason,
     decidedAt: donation.decidedAt,
     createdAt: donation.createdAt,
