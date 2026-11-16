@@ -28,6 +28,7 @@ import type { IOrganizationMembershipRepository } from './repositories/organizat
 import { ORGANIZATION_MEMBERSHIP_REPOSITORY } from './repositories/organization-membership-repository.interface';
 import type { IUserRepository } from '../auth/repositories/user-repository.interface';
 import { USER_REPOSITORY } from '../auth/repositories/user-repository.interface';
+import { AccountType } from '../auth/entities/user.entity';
 import { MailService } from '../mail/mail.service';
 import {
   organizationRejectedMail,
@@ -112,6 +113,15 @@ export class OrganizationService {
     if (memberships.length > 0) {
       throw new ForbiddenException(
         'Solo el dueño puede editar los datos de la organización.',
+      );
+    }
+
+    // Solo una cuenta de organización puede crear una. Se relee de la base y
+    // no del token para que el tipo no se pueda falsificar desde el cliente.
+    const user = await this.userRepository.findById(userId);
+    if (user?.accountType !== AccountType.ORGANIZATION) {
+      throw new ForbiddenException(
+        'Las cuentas de donante no pueden crear una organización.',
       );
     }
 

@@ -3,13 +3,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
-import { User } from './entities/user.entity';
+import { AccountType, User } from './entities/user.entity';
 import {
   OrganizationMembership,
   OrganizationMembershipRole,
@@ -27,6 +28,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     passwordHash: 'hashed',
     emailVerified: false,
     isPlatformAdmin: false,
+    accountType: AccountType.DONOR,
     verificationToken: 'valid-token',
     verificationTokenExpiresAt: new Date(Date.now() + 60_000),
     resetPasswordToken: null,
@@ -100,7 +102,47 @@ describe('AuthService', () => {
         validDto.email,
         created.verificationToken,
       );
-      expect(result).toEqual({ email: validDto.email });
+      expect(result).toEqual({
+        email: validDto.email,
+        verificationMailSent: true,
+      });
+    });
+
+    it('Dado que el correo de verificación falla, cuando se registra, entonces la cuenta queda creada y responde verificationMailSent false', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.create.mockResolvedValue(makeUser());
+      mail.send.mockRejectedValue(new Error('454 Too many login attempts'));
+
+      const result = await service.register(validDto);
+
+      expect(repo.create).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        email: validDto.email,
+        verificationMailSent: false,
+      });
+    });
+
+    it('Dado un registro sin tipo de cuenta, cuando se crea, entonces la cuenta nace donante', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.create.mockResolvedValue(makeUser());
+
+      await service.register(validDto);
+
+      expect(repo.create.mock.calls[0][0].accountType).toBe(AccountType.DONOR);
+    });
+
+    it('Dado un registro que elige cuenta de organización, cuando se crea, entonces la cuenta nace de organización', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.create.mockResolvedValue(makeUser());
+
+      await service.register({
+        ...validDto,
+        accountType: AccountType.ORGANIZATION,
+      });
+
+      expect(repo.create.mock.calls[0][0].accountType).toBe(
+        AccountType.ORGANIZATION,
+      );
     });
 
     it('rejects a duplicate email', async () => {
@@ -194,6 +236,16 @@ describe('AuthService', () => {
       expect(result).toEqual({ message: genericMessage });
     });
 
+    it('Dado que el envío del correo falla, cuando se reenvía la verificación, entonces responde 503 con un mensaje claro', async () => {
+      repo.findByEmail.mockResolvedValue(makeUser());
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+      mail.send.mockRejectedValue(new Error('454 Too many login attempts'));
+
+      await expect(
+        service.resendVerification({ email: 'maria@example.com' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
     it('does not reveal that an unknown email is not registered', async () => {
       repo.findByEmail.mockResolvedValue(null);
 
@@ -252,6 +304,7 @@ describe('AuthService', () => {
           email: user.email,
           phone: user.phone,
           isPlatformAdmin: false,
+          accountType: AccountType.DONOR,
         },
         role: null,
       });
@@ -402,6 +455,18 @@ describe('AuthService', () => {
       );
       expect(resetMail.send).toHaveBeenCalledTimes(1);
       expect(res.message).toContain('Si el correo está registrado');
+    });
+
+    it('Dado que el envío del correo falla, cuando se pide restablecer la contraseña, entonces responde 503 con un mensaje claro', async () => {
+      repo.findByEmail.mockResolvedValue(makeUser());
+      repo.save.mockImplementation((u) => Promise.resolve(u));
+      resetMail.send.mockRejectedValue(
+        new Error('454 Too many login attempts'),
+      );
+
+      await expect(
+        service.forgotPassword({ email: 'maria@example.com' }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('returns same security message when email does not exist (PU-3)', async () => {

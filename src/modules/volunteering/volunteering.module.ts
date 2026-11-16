@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { User } from '../auth/entities/user.entity';
+import { EventModule } from '../event/event.module';
 import { OrganizationModule } from '../organization/organization.module';
 import { Organization } from '../organization/entities/organization.entity';
 import { OrganizationMembership } from '../organization/entities/organization-membership.entity';
@@ -17,6 +18,7 @@ import { VolunteeringService } from './volunteering.service';
 @Module({
   imports: [
     AuthModule,
+    EventModule,
     // Por `MemberService`: aprobar una solicitud emite una invitación, no crea
     // la membresía a mano. No hay ciclo — OrganizationModule importa
     // AuthModule, no este módulo.

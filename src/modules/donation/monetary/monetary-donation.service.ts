@@ -8,7 +8,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MailMessage, MailService } from '../../mail/mail.service';
 import {
@@ -23,7 +23,7 @@ import {
   detectImageMime,
 } from '../../media/media-purposes';
 import { UploadedFile } from '../../media/media.service';
-import { User } from '../../auth/entities/user.entity';
+import { AccountType, User } from '../../auth/entities/user.entity';
 import {
   MEMBER_MANAGER_ROLES,
   OrganizationMembership,
@@ -52,6 +52,12 @@ export interface MonetaryDonationView {
   receiptUrl: string | null;
   donorName: string | null;
   donorContact: string | null;
+  /**
+   * Id para enlazar el perfil público del donante (QK-110), solo cuando esta
+   * misma donación ya garantiza que el perfil existe (DOMAIN §17). En otro caso
+   * `null`: nunca para una anónima, aunque el panel vea su nombre (§7).
+   */
+  donorProfileId: string | null;
   rejectReason: string | null;
   decidedAt: Date | null;
   createdAt: Date;
@@ -63,8 +69,8 @@ export interface MonetaryDonationView {
  * Conviven dos vías de acceso a datos a propósito, igual que en
  * `VolunteerRequestService`:
  *
- * - `declare` la llama un visitante **sin sesión**, así que no hay tenant que
- *   setear: usa los repositorios inyectados, que van por la conexión owner. El
+ * - `declare` la llama un visitante desde la ficha pública —con o sin sesión,
+ *   pero nunca dentro de una organización—, así que no hay tenant que setear: usa los repositorios inyectados, que van por la conexión owner. El
  *   recorte lo hace este service resolviendo la organización `validated` de la
  *   URL antes de escribir.
  * - el panel (`list`, `confirm`, `reject`) entra autenticado, con `TenantGuard`
@@ -92,11 +98,18 @@ export class MonetaryDonationService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Vía anónima: alguien declara que transfirió desde la ficha pública. */
+  /**
+   * Vía pública: alguien declara que transfirió desde la ficha. Con sesión
+   * (`donorUserId`) la donación queda asociada a la cuenta (QK-113); nombre y
+   * contacto siguen siendo los que vinieron en el formulario —el front los
+   * precarga de la cuenta y el donante puede cambiarlos solo para esta
+   * donación—, así que el perfil no se toca.
+   */
   async declare(
     organizationId: string,
     dto: CreateMonetaryDonationDto,
     file?: UploadedFile,
+    donorUserId?: string,
   ): Promise<{ id: string; status: MonetaryDonationStatus }> {
     // Mercado Pago está contemplado en el modelo (enum, `externalPaymentId`) y
     // en la UI, pero todavía no implementado. Cuando entre, acá va la creación
@@ -122,6 +135,17 @@ export class MonetaryDonationService {
       );
     }
 
+    // Una cuenta de organización que dona lo hace en nombre de su organización,
+    // no como persona: se registra como si no hubiera sesión, así nunca entra
+    // en el ranking ni en el perfil de donante.
+    const donorAccount = donorUserId
+      ? await this.users.findOneBy({ id: donorUserId })
+      : null;
+    const sessionUserId =
+      donorAccount?.accountType === AccountType.ORGANIZATION
+        ? undefined
+        : donorUserId;
+
     const receipt = file
       ? await this.uploadReceipt(organizationId, file)
       : null;
@@ -135,6 +159,10 @@ export class MonetaryDonationService {
         operationNumber: dto.operationNumber?.trim() || null,
         donorName: dto.donorName?.trim() || null,
         donorContact: dto.donorContact?.trim().toLowerCase() || null,
+        donorUserId: sessionUserId ?? null,
+        // Sin cuenta no hay superficie pública de la que esconderse: el flag
+        // solo se guarda con sesión, para no dejar filas "anónimas" sin dueño.
+        isAnonymous: sessionUserId ? (dto.isAnonymous ?? false) : false,
         receiptUrl: receipt?.url ?? null,
         receiptPublicId: receipt?.publicId ?? null,
         externalPaymentId: null,
@@ -164,7 +192,8 @@ export class MonetaryDonationService {
       },
       order: { createdAt: 'DESC' },
     });
-    return rows.map(toView);
+    const profiles = await this.donorProfiles(rows);
+    return rows.map((row) => toView(row, profiles));
   }
 
   async confirm(id: string, userId: string): Promise<MonetaryDonationView> {
@@ -202,7 +231,9 @@ export class MonetaryDonationService {
 
     await this.notifyDecided(saved);
 
-    return toView(saved);
+    // Confirmar es justo lo que vuelve enlazable al donante: el front reemplaza
+    // la fila con esta respuesta, así que tiene que traer el id ya resuelto.
+    return toView(saved, await this.donorProfiles([saved]));
   }
 
   private async uploadReceipt(
@@ -325,6 +356,47 @@ export class MonetaryDonationService {
     }
   }
 
+  /**
+   * Donaciones que garantizan el perfil público de su donante: las
+   * mismas reglas que `PublicService.countedDonations()` aplicadas a la fila
+   * (la organización ya está `validated`, si no el panel no opera). El tipo de
+   * cuenta se relee porque una donación previa a la separación de tipos puede
+   * traer el id de una cuenta que la migración pasó a `organization`, y esa no
+   * tiene perfil (§3, §17).
+   *
+   * Va por la conexión del tenant, no por el repo owner: el request ya retiene
+   * una conexión (TenantContextInterceptor) y pedir otra al pool puede agotarlo
+   * con requests concurrentes. `users` es global, sin RLS, y `hornerito_app`
+   * tiene SELECT sobre ella (ColumnBasedTenancy).
+   */
+  private async donorProfiles(
+    donations: MonetaryDonation[],
+  ): Promise<Set<string>> {
+    const eligible = donations.filter(
+      (d) =>
+        d.status === MonetaryDonationStatus.CONFIRMADA &&
+        !d.isAnonymous &&
+        d.donorUserId,
+    );
+    if (!eligible.length) return new Set();
+    const donors = await this.tenantContext
+      .getManager()
+      .getRepository(User)
+      .find({
+        where: {
+          id: In([...new Set(eligible.map((d) => d.donorUserId))]),
+          accountType: AccountType.DONOR,
+        },
+        select: { id: true },
+      });
+    const donorIds = new Set(donors.map((u) => u.id));
+    // Por donación, no por cuenta: otra fila del mismo donante (pendiente,
+    // anónima) no hereda el enlace.
+    return new Set(
+      eligible.filter((d) => donorIds.has(d.donorUserId!)).map((d) => d.id),
+    );
+  }
+
   private get orgId(): string {
     return this.tenantContext.organizationId;
   }
@@ -334,7 +406,10 @@ export class MonetaryDonationService {
   }
 }
 
-function toView(donation: MonetaryDonation): MonetaryDonationView {
+function toView(
+  donation: MonetaryDonation,
+  donorProfiles: Set<string>,
+): MonetaryDonationView {
   return {
     id: donation.id,
     amount: donation.amount,
@@ -344,6 +419,9 @@ function toView(donation: MonetaryDonation): MonetaryDonationView {
     receiptUrl: donation.receiptUrl,
     donorName: donation.donorName,
     donorContact: donation.donorContact,
+    donorProfileId: donorProfiles.has(donation.id)
+      ? donation.donorUserId
+      : null,
     rejectReason: donation.rejectReason,
     decidedAt: donation.decidedAt,
     createdAt: donation.createdAt,

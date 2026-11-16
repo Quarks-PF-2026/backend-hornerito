@@ -15,11 +15,16 @@
  *      pisa lo que otro escenario esté usando.
  *   3. Guarda contra la base equivocada (ver `assertBaseDeTest`).
  */
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import * as bcrypt from 'bcrypt';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
+import { AppModule } from '../../../src/app.module';
+import { CloudinaryService } from '../../../src/modules/media/cloudinary.service';
+import { FakeCloudinary } from './fake-cloudinary';
 import {
-  bootstrapApp,
+  DEFAULT_PASSWORD,
   createOrganization,
   createPlatformAdmin,
   cleanupOrganizations,
@@ -65,14 +70,28 @@ export class MundoDeAceptacion {
   /** Bolsa libre para que los steps se pasen ids sin ensuciar la clase. */
   readonly datos = new Map<string, unknown>();
 
+  /** Cloudinary simulado (ver `fake-cloudinary.ts`); uno por escenario. */
+  readonly cloudinary = new FakeCloudinary();
+
   private readonly orgIdsCreadas: string[] = [];
   private readonly emailsCreados: string[] = [];
 
   async iniciar(): Promise<void> {
     assertBaseDeTest();
-    const { app, dataSource } = await bootstrapApp();
-    this.app = app;
-    this.dataSource = dataSource;
+    // Mismo bootstrap que `bootstrapApp` (test/sprint2/helpers.ts), más el
+    // override de Cloudinary: es la única frontera externa que se simula.
+    const moduleFixture = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(CloudinaryService)
+      .useValue(this.cloudinary)
+      .compile();
+    this.app = moduleFixture.createNestApplication();
+    this.app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
+    await this.app.init();
+    this.dataSource = this.app.get(DataSource);
   }
 
   async cerrar(): Promise<void> {
@@ -92,7 +111,8 @@ export class MundoDeAceptacion {
   // --- Precondiciones de alto nivel, para los steps `Dado` -----------------
 
   async unUsuarioAutenticado(alias = 'usuario'): Promise<Session> {
-    const email = uniqueEmail(alias);
+    // El alias puede ser un nombre ("Carla Gómez"): sin slug el email es inválido.
+    const email = uniqueEmail(slug(alias));
     const sesion = await registerAndLogin(this.app, email);
     this.emailsCreados.push(email);
     this.sesiones.set(alias, sesion);
@@ -149,6 +169,174 @@ export class MundoDeAceptacion {
     return sesion;
   }
 
+  // --- Donaciones económicas y rankings (QK-113, QK-114, QK-115, QK-110) ---
+  //
+  // Los rankings se leen por persona y por organización, así que las
+  // precondiciones se nombran como las dice el `.feature` ("Ana Pérez",
+  // "Comedor Los Pibes") y se crean una sola vez por escenario aunque el
+  // nombre aparezca en varias filas.
+
+  /**
+   * Un donante con cuenta y nombre propio. Su alias es su nombre.
+   *
+   * La cuenta se inserta ya verificada en vez de recorrer el registro: el
+   * registro manda un mail de verificación real por cuenta, y un escenario de
+   * ranking necesita una docena de donantes. Lo que se prueba acá es el
+   * ranking, no el alta (eso es QK-15). El token sale igual del login real.
+   */
+  async unDonante(nombre: string): Promise<Session> {
+    const existente = this.sesiones.get(nombre);
+    if (existente) return existente;
+    // El email necesita algo sin espacios ni tildes.
+    const email = uniqueEmail(slug(nombre));
+    hashDePrueba ??= bcrypt.hash(DEFAULT_PASSWORD, 4);
+    await this.dataSource.query(
+      `INSERT INTO users (name, email, "passwordHash", "emailVerified", "termsAcceptedAt")
+       VALUES ($1, $2, $3, true, now())`,
+      [nombre, email, await hashDePrueba],
+    );
+    this.emailsCreados.push(email);
+    const res = await this.http()
+      .post('/auth/login')
+      .send({ email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const body = res.body as { accessToken: string; user: { id: string } };
+    const sesion: Session = {
+      token: body.accessToken,
+      userId: body.user.id,
+      email,
+    };
+    this.sesiones.set(nombre, sesion);
+    return sesion;
+  }
+
+  /**
+   * Una organización validada con datos de cobro cargados: es la que ofrece
+   * "Donar dinero" en su ficha. El responsable queda con alias
+   * `responsable:<nombre>` y token scopeado a ella, para confirmar donaciones.
+   */
+  async unaOrganizacionQueRecibeDonaciones(nombre: string): Promise<string> {
+    const existente = this.datos.get(`org:${nombre}`) as string | undefined;
+    if (existente) return existente;
+    const alias = `responsable-${slug(nombre)}`;
+    await this.unUsuarioAutenticado(alias);
+    const org = await this.unaOrganizacionValidada(alias, {
+      name: `${nombre} ${Date.now()}`,
+    });
+    await this.dataSource.query(
+      `UPDATE organizations
+          SET "paymentAlias" = $1, "paymentHolder" = $2, "paymentBank" = 'Banco Nación'
+        WHERE id = $3`,
+      [`${slug(nombre)}.${Date.now()}`, nombre, org.id],
+    );
+    this.datos.set(`org:${nombre}`, org.id);
+    this.sesiones.set(`responsable:${nombre}`, this.sesion(alias));
+    return org.id;
+  }
+
+  organizacion(nombre: string): string {
+    const id = this.datos.get(`org:${nombre}`) as string | undefined;
+    if (!id) throw new Error(`No existe la organización "${nombre}".`);
+    return id;
+  }
+
+  /**
+   * Inserta una donación económica directo en la base. Es precondición, no lo
+   * que se prueba: los rankings leen donaciones ya confirmadas, y armarlas por
+   * la API obliga a un declarar + confirmar por fila (con sus mails) y no deja
+   * fijar la fecha de declaración, que es justo lo que miran el corte de mes y
+   * el desempate.
+   */
+  async unaDonacionEconomica(d: {
+    organizationId: string;
+    amount: number;
+    donorUserId: string | null;
+    donorName: string | null;
+    donorContact?: string | null;
+    status?: 'declarada' | 'confirmada' | 'rechazada';
+    isAnonymous?: boolean;
+    createdAt?: Date;
+  }): Promise<string> {
+    const status = d.status ?? 'confirmada';
+    // `donations."createdAt"` es `timestamp` sin zona y la app lo escribe con
+    // `now()` en UTC. Un `Date` de JS viaja serializado en la hora local del
+    // proceso y Postgres descarta el offset en un `timestamp`: en una máquina
+    // en hora AR quedaría corrido tres horas. Por eso va como ISO (UTC) y se
+    // convierte explícito en el SQL.
+    const createdAt = (d.createdAt ?? new Date()).toISOString();
+    const rows: Array<{ id: string }> = await this.dataSource.query(
+      `INSERT INTO donations
+         ("organizationId", kind, amount, status, method, "donorName", "donorContact",
+          "donorUserId", "isAnonymous", "createdAt", "decidedAt", "rejectReason")
+       VALUES ($1, 'economica', $2, $3, 'transferencia', $4, $5, $6, $7,
+               ($8::timestamptz AT TIME ZONE 'UTC'), $9, $10)
+       RETURNING id`,
+      [
+        d.organizationId,
+        d.amount,
+        status,
+        d.donorName,
+        d.donorContact ?? null,
+        d.donorUserId,
+        d.isAnonymous ?? false,
+        createdAt,
+        status === 'declarada' ? null : createdAt,
+        status === 'rechazada' ? 'No figura en el extracto.' : null,
+      ],
+    );
+    return rows[0].id;
+  }
+
+  /**
+   * Carga la tabla `| donante | organización | monto |` de los `.feature`, con
+   * columnas opcionales `estado` (confirmada · a confirmar · rechazada),
+   * `anónima` (sí · no) y `fecha` (ver `fechaDeDonacion`). Por defecto:
+   * confirmada, a la vista, declarada ahora.
+   */
+  async lasDonaciones(filas: Array<Record<string, string>>): Promise<void> {
+    const estados = {
+      confirmada: 'confirmada',
+      'a confirmar': 'declarada',
+      rechazada: 'rechazada',
+    } as const;
+    for (const fila of filas) {
+      const donante = await this.unDonante(fila['donante']);
+      const organizationId = await this.unaOrganizacionQueRecibeDonaciones(
+        fila['organización'],
+      );
+      await this.unaDonacionEconomica({
+        organizationId,
+        amount: Number(fila['monto']),
+        donorUserId: donante.userId,
+        donorName: fila['donante'],
+        donorContact: donante.email,
+        status:
+          estados[(fila['estado'] ?? 'confirmada') as keyof typeof estados],
+        isAnonymous: fila['anónima'] === 'sí',
+        createdAt: fechaDeDonacion(fila['fecha']),
+      });
+    }
+  }
+
+  /** `cantidad` donantes ("Donante 01"…) con montos distintos: 1000, 2000, … */
+  async variosDonantes(cantidad: number, organizacion: string): Promise<void> {
+    await this.lasDonaciones(
+      Array.from({ length: cantidad }, (_, i) => ({
+        donante: `Donante ${String(i + 1).padStart(2, '0')}`,
+        organización: organizacion,
+        monto: String((i + 1) * 1000),
+      })),
+    );
+  }
+
+  /** El responsable de la organización confirma que recibió la plata. */
+  async confirmarDonacion(organizacion: string, donationId: string) {
+    return this.http()
+      .post(`/donations/monetary/${donationId}/confirm`)
+      .set('Authorization', this.auth(`responsable:${organizacion}`))
+      .expect(201);
+  }
+
   sesion(alias = 'usuario'): Session {
     const sesion = this.sesiones.get(alias);
     if (!sesion) {
@@ -185,6 +373,62 @@ export class MundoDeAceptacion {
     }
     return this.respuesta;
   }
+}
+
+/** Hash de `DEFAULT_PASSWORD`, calculado una vez por proceso (bcrypt es lento a propósito). */
+let hashDePrueba: Promise<string> | undefined;
+
+/** "Ana Pérez" → "ana-perez": apto para un email o un alias de cobro. */
+function slug(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/** Año y mes en curso en hora de Argentina. */
+export function mesEnCursoAR(): { anio: number; mes: number } {
+  const [anio, mes] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+  })
+    .format(new Date())
+    .split('-')
+    .map(Number);
+  return { anio, mes };
+}
+
+/**
+ * Traduce la columna `fecha` de los `.feature` a un instante. Argentina es
+ * UTC-3 todo el año, así que una hora AR es la hora UTC menos tres:
+ * "último día del mes anterior a las 22:30" cae ya en el mes en curso si se lo
+ * mira en UTC — es justo el borde que prueba el corte de mes.
+ *
+ *   - vacío                                     → ahora
+ *   - "día N de este mes a las HH:MM"           → hora AR
+ *   - "último día del mes anterior a las HH:MM" → hora AR
+ *   - "mes anterior"                            → el 15 del mes anterior al mediodía AR
+ */
+function fechaDeDonacion(texto?: string): Date {
+  if (!texto) return new Date();
+  const { anio, mes } = mesEnCursoAR();
+  const enAR = (dia: number, hh: number, mm: number) =>
+    new Date(Date.UTC(anio, mes - 1, dia, hh + 3, mm));
+
+  const delMes = /^día (\d+) de este mes a las (\d{2}):(\d{2})$/.exec(texto);
+  if (delMes) return enAR(Number(delMes[1]), +delMes[2], +delMes[3]);
+
+  const ultimo = /^último día del mes anterior a las (\d{2}):(\d{2})$/.exec(
+    texto,
+  );
+  // Día 0 del mes en curso = último día del anterior (Date.UTC lo normaliza).
+  if (ultimo) return enAR(0, +ultimo[1], +ultimo[2]);
+
+  if (texto === 'mes anterior') {
+    return new Date(Date.UTC(anio, mes - 2, 15, 15, 0));
+  }
+  throw new Error(`No sé interpretar la fecha de donación "${texto}".`);
 }
 
 /**

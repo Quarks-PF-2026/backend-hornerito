@@ -18,6 +18,13 @@ export class ProfileController {
     return this.profileService.getProfile(user.id);
   }
 
+  // El donante sale siempre del JWT: no hay parámetro con el que pedir el
+  // historial de otra persona.
+  @Get('donations')
+  listMyDonations(@CurrentUser() user: AuthenticatedUser) {
+    return this.profileService.listMyDonations(user.id);
+  }
+
   @Patch()
   updateProfile(
     @CurrentUser() user: AuthenticatedUser,

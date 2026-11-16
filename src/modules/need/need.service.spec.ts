@@ -10,6 +10,7 @@ import {
   SupplyCategory,
   SupplyUnit,
 } from '../supply/entities/supply.entity';
+import { EventService } from '../event/event.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { Need, isNeedClosed } from './entities/need.entity';
 import { NeedService } from './need.service';
@@ -23,6 +24,7 @@ function makeNeed(overrides: Partial<Need> = {}): Need {
     coveredQuantity: 0,
     deadline: '2099-08-01',
     closedManually: false,
+    eventId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -48,6 +50,7 @@ describe('NeedService', () => {
   let needRepo: jest.Mocked<Repository<Need>>;
   let supplyRepo: jest.Mocked<Repository<Supply>>;
   let tenantContext: jest.Mocked<TenantContextService>;
+  let events: jest.Mocked<EventService>;
 
   beforeEach(() => {
     needRepo = {
@@ -66,7 +69,12 @@ describe('NeedService', () => {
           entity === Supply ? supplyRepo : needRepo,
       }),
     } as unknown as jest.Mocked<TenantContextService>;
-    service = new NeedService(tenantContext);
+    events = {
+      resolveLinkableId: jest.fn((id: string | null | undefined) =>
+        Promise.resolve(id ?? null),
+      ),
+    } as unknown as jest.Mocked<EventService>;
+    service = new NeedService(tenantContext, events);
   });
 
   describe('listMine', () => {
@@ -94,8 +102,38 @@ describe('NeedService', () => {
         organizationId: 'org-1',
         coveredQuantity: 0,
         closedManually: false,
+        eventId: null,
       });
       expect(needRepo.save).toHaveBeenCalled();
+    });
+
+    it('asocia el evento validado por EventService', async () => {
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+
+      const result = await service.create({
+        supplyId: 'supply-1',
+        requiredQuantity: 50,
+        deadline: '2099-08-01',
+        eventId: 'event-1',
+      });
+
+      expect(events.resolveLinkableId).toHaveBeenCalledWith('event-1');
+      expect(result.eventId).toBe('event-1');
+    });
+
+    it('no guarda si el evento no es asociable', async () => {
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+      events.resolveLinkableId.mockRejectedValue(new ConflictException());
+
+      await expect(
+        service.create({
+          supplyId: 'supply-1',
+          requiredQuantity: 50,
+          deadline: '2099-08-01',
+          eventId: 'event-baja',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(needRepo.save).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException when the supply does not exist', async () => {
@@ -124,6 +162,21 @@ describe('NeedService', () => {
   });
 
   describe('update', () => {
+    it('conserva el evento actual al validar y permite desasociar', async () => {
+      needRepo.findOneBy.mockResolvedValue(makeNeed({ eventId: 'event-1' }));
+      supplyRepo.findOneBy.mockResolvedValue(makeSupply());
+
+      const result = await service.update('need-1', {
+        supplyId: 'supply-1',
+        requiredQuantity: 50,
+        deadline: '2099-08-01',
+        eventId: null,
+      });
+
+      expect(events.resolveLinkableId).toHaveBeenCalledWith(null, 'event-1');
+      expect(result.eventId).toBeNull();
+    });
+
     it('throws NotFoundException when the need does not exist', async () => {
       needRepo.findOneBy.mockResolvedValue(null);
 

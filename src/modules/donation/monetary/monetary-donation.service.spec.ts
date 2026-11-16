@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { MailService } from '../../mail/mail.service';
 import { CloudinaryService } from '../../media/cloudinary.service';
 import { UploadedFile } from '../../media/media.service';
-import { User } from '../../auth/entities/user.entity';
+import { AccountType, User } from '../../auth/entities/user.entity';
 import {
   OrganizationMembership,
   OrganizationMembershipRole,
@@ -80,6 +80,8 @@ function makeDonation(
     externalPaymentId: null,
     donorName: null,
     donorContact: null,
+    donorUserId: null,
+    isAnonymous: false,
     decidedByUserId: null,
     decidedAt: null,
     rejectReason: null,
@@ -95,7 +97,9 @@ describe('MonetaryDonationService', () => {
   let tenantRepo: { findOneBy: jest.Mock; find: jest.Mock; save: jest.Mock };
   let organizationRepo: { findOneBy: jest.Mock };
   let membershipRepo: { find: jest.Mock };
-  let userRepo: { find: jest.Mock };
+  let userRepo: { find: jest.Mock; findOneBy: jest.Mock };
+  /** `users` leída por la conexión del tenant (donorProfiles), separada del repo owner. */
+  let tenantUserRepo: { find: jest.Mock };
   let cloudinary: { upload: jest.Mock };
   let mail: { send: jest.Mock };
 
@@ -120,7 +124,13 @@ describe('MonetaryDonationService', () => {
       findOneBy: jest.fn().mockResolvedValue(makeOrganization()),
     };
     membershipRepo = { find: jest.fn().mockResolvedValue([]) };
-    userRepo = { find: jest.fn().mockResolvedValue([]) };
+    userRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOneBy: jest
+        .fn()
+        .mockResolvedValue({ id: 'user-ana', accountType: AccountType.DONOR }),
+    };
+    tenantUserRepo = { find: jest.fn().mockResolvedValue([]) };
     cloudinary = {
       upload: jest.fn().mockResolvedValue({
         url: 'https://cdn/comprobante.png',
@@ -132,7 +142,9 @@ describe('MonetaryDonationService', () => {
     const tenantContext = {
       organizationId: 'org-1',
       getManager: jest.fn().mockReturnValue({
-        getRepository: () => tenantRepo,
+        // `donorProfiles` lee `users` por la conexión del tenant.
+        getRepository: (entity: unknown) =>
+          entity === User ? tenantUserRepo : tenantRepo,
       }),
     } as unknown as jest.Mocked<TenantContextService>;
 
@@ -178,6 +190,80 @@ describe('MonetaryDonationService', () => {
       );
       // Sin email no hay a quién acusar recibo.
       expect(mail.send).not.toHaveBeenCalled();
+    });
+
+    describe('con y sin sesión (QK-113)', () => {
+      it('dado un donante con sesión, cuando declara, entonces la donación queda asociada a su cuenta con lo que escribió en el formulario', async () => {
+        await service.declare(
+          'org-1',
+          dtoWith({
+            donorName: 'Familia Pérez',
+            donorContact: 'familia.perez@correo.test',
+          }),
+          undefined,
+          'user-ana',
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            donorUserId: 'user-ana',
+            isAnonymous: false,
+            donorName: 'Familia Pérez',
+            donorContact: 'familia.perez@correo.test',
+          }),
+        );
+      });
+
+      it('dado un donante con sesión, cuando la marca anónima, entonces queda asociada y anónima, conservando nombre y contacto para la organización', async () => {
+        await service.declare(
+          'org-1',
+          dtoWith({
+            donorName: 'Ana Pérez',
+            donorContact: 'ana@mail.com',
+            isAnonymous: true,
+          }),
+          undefined,
+          'user-ana',
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            donorUserId: 'user-ana',
+            isAnonymous: true,
+            donorName: 'Ana Pérez',
+            donorContact: 'ana@mail.com',
+          }),
+        );
+      });
+
+      it('dado una cuenta de organización con sesión, cuando declara, entonces se registra como si no hubiera sesión', async () => {
+        userRepo.findOneBy.mockResolvedValue({
+          id: 'user-org',
+          accountType: AccountType.ORGANIZATION,
+        });
+
+        await service.declare(
+          'org-1',
+          dtoWith({ donorName: 'Comedor Vecino', isAnonymous: true }),
+          undefined,
+          'user-org',
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ donorUserId: null, isAnonymous: false }),
+        );
+      });
+
+      it('dado un visitante sin sesión, cuando declara aunque pida anonimato, entonces no queda asociada a ninguna cuenta ni marcada anónima', async () => {
+        await service.declare(
+          'org-1',
+          dtoWith({ donorName: 'Ana Pérez', isAnonymous: true }),
+        );
+
+        expect(donationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ donorUserId: null, isAnonymous: false }),
+        );
+      });
     });
 
     it('le acusa recibo al donante que dejó email', async () => {
@@ -407,6 +493,87 @@ describe('MonetaryDonationService', () => {
         { order: Record<string, string> },
       ];
       expect(args.order).toEqual({ createdAt: 'DESC' });
+    });
+
+    describe('enlace al perfil público del donante (QK-110)', () => {
+      const confirmed = { status: MonetaryDonationStatus.CONFIRMADA };
+
+      it('dada una confirmada, no anónima, de una cuenta donante, entonces expone el id para enlazar su perfil', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({ ...confirmed, donorUserId: 'user-ana' }),
+        ]);
+        tenantUserRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBe('user-ana');
+        const [args] = tenantUserRepo.find.mock.calls[0] as [
+          { where: { accountType: AccountType } },
+        ];
+        expect(args.where.accountType).toBe(AccountType.DONOR);
+        // Por la conexión del tenant: una segunda conexión del pool por request
+        // puede agotarlo con requests concurrentes.
+        expect(userRepo.find).not.toHaveBeenCalled();
+      });
+
+      it('dada una anónima, entonces nunca expone el enlace aunque el donante tenga perfil', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({
+            ...confirmed,
+            donorUserId: 'user-ana',
+            isAnonymous: true,
+          }),
+        ]);
+        tenantUserRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBeNull();
+      });
+
+      it('dada una pendiente del mismo donante, entonces no hereda el enlace de otra fila confirmada', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({ ...confirmed, id: 'd-1', donorUserId: 'user-ana' }),
+          makeDonation({ id: 'd-2', donorUserId: 'user-ana' }),
+        ]);
+        tenantUserRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const rows = await service.list();
+
+        expect(rows.map((r) => r.donorProfileId)).toEqual(['user-ana', null]);
+      });
+
+      it('dada una confirmada de una cuenta que pasó a organización, entonces no expone el enlace', async () => {
+        tenantRepo.find.mockResolvedValue([
+          makeDonation({ ...confirmed, donorUserId: 'user-org' }),
+        ]);
+        // El filtro por tipo de cuenta la descarta.
+        tenantUserRepo.find.mockResolvedValue([]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBeNull();
+      });
+
+      it('sin ninguna donación enlazable no consulta cuentas', async () => {
+        tenantRepo.find.mockResolvedValue([makeDonation()]);
+
+        const [row] = await service.list();
+
+        expect(row.donorProfileId).toBeNull();
+        expect(tenantUserRepo.find).not.toHaveBeenCalled();
+      });
+
+      it('al confirmar, la respuesta ya trae el enlace', async () => {
+        tenantRepo.findOneBy.mockResolvedValue(
+          makeDonation({ donorUserId: 'user-ana' }),
+        );
+        tenantUserRepo.find.mockResolvedValue([{ id: 'user-ana' }]);
+
+        const result = await service.confirm('donation-1', 'user-1');
+
+        expect(result.donorProfileId).toBe('user-ana');
+      });
     });
   });
 });

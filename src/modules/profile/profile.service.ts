@@ -4,9 +4,17 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
+import { Repository } from 'typeorm';
 import type { IUserRepository } from '../auth/repositories/user-repository.interface';
 import { USER_REPOSITORY } from '../auth/repositories/user-repository.interface';
+import { DonationKind } from '../donation/entities/donation.entity';
+import {
+  MonetaryDonation,
+  MonetaryDonationStatus,
+} from '../donation/entities/monetary-donation.entity';
+import { Organization } from '../organization/entities/organization.entity';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -22,6 +30,19 @@ export interface ProfileResult {
   phone: string | null;
 }
 
+export interface MyDonationView {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  amount: number;
+  status: MonetaryDonationStatus;
+  isAnonymous: boolean;
+  createdAt: string;
+}
+
+// ponytail: límite fijo de 50, paginar cuando un donante supere ese número
+const MY_DONATIONS_LIMIT = 50;
+
 // El perfil es de la persona (tabla `users`), no de la membresía a una
 // organización: por eso este servicio no pasa por TenantContextService ni
 // necesita organizationId. Los endpoints siempre operan sobre el usuario del
@@ -31,6 +52,8 @@ export interface ProfileResult {
 export class ProfileService {
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepository: IUserRepository,
+    @InjectRepository(MonetaryDonation)
+    private readonly donations: Repository<MonetaryDonation>,
   ) {}
 
   private async getUserOrFail(userId: string) {
@@ -95,6 +118,49 @@ export class ProfileService {
     await this.userRepository.save(user);
 
     return { message: 'Contraseña actualizada correctamente.' };
+  }
+
+  /**
+   * "Mis donaciones" (QK-113): el historial privado no es el ranking público.
+   * El ranking solo cuenta confirmadas y no anónimas; acá el donante ve todo lo
+   * que declaró con sesión, incluidas anónimas, pendientes y rechazadas, porque
+   * es su propia información y necesita seguir el estado de cada una.
+   *
+   * Cruza organizaciones, así que no hay tenant: corre como owner, igual que
+   * `PublicService.countedDonations`, y `donations` no tiene FORCE RLS. Por eso
+   * el filtro por donante y por variante va explícito: nada lo recorta después.
+   */
+  async listMyDonations(userId: string): Promise<MyDonationView[]> {
+    const rows = await this.donations
+      .createQueryBuilder('d')
+      .innerJoin(Organization, 'o', 'o.id = d."organizationId"')
+      .where('d."kind" = :kind', { kind: DonationKind.ECONOMICA })
+      .andWhere('d."donorUserId" = :userId', { userId })
+      .select('d.id', 'id')
+      .addSelect('d."organizationId"', 'organizationId')
+      .addSelect('o.name', 'organizationName')
+      .addSelect('d.amount', 'amount')
+      .addSelect('d.status', 'status')
+      .addSelect('d."isAnonymous"', 'isAnonymous')
+      .addSelect('d."createdAt"', 'createdAt')
+      .orderBy('d."createdAt"', 'DESC')
+      .addOrderBy('d.id', 'DESC')
+      .limit(MY_DONATIONS_LIMIT)
+      .getRawMany<{
+        id: string;
+        organizationId: string;
+        organizationName: string;
+        amount: string;
+        status: MonetaryDonationStatus;
+        isAnonymous: boolean;
+        createdAt: Date;
+      }>();
+    // getRawMany saltea el transformer de la entidad: el numeric llega string.
+    return rows.map((row) => ({
+      ...row,
+      amount: Number(row.amount),
+      createdAt: new Date(row.createdAt).toISOString(),
+    }));
   }
 
   private toProfileResult(user: {

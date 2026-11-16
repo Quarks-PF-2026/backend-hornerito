@@ -1,8 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { TODAY_AR, toIsoDate } from '../../common/today-ar';
+import { AccountType, User } from '../auth/entities/user.entity';
 import { CollectionPoint } from '../collection-point/entities/collection-point.entity';
+import { currentMonthRange, utcLiteral } from '../donation/date-range';
+import { DonationKind } from '../donation/entities/donation.entity';
+import {
+  MonetaryDonation,
+  MonetaryDonationStatus,
+} from '../donation/entities/monetary-donation.entity';
+import { EventKind, OrgEvent } from '../event/entities/event.entity';
 import { Media } from '../media/entities/media.entity';
 import { mediaByOwner } from '../media/media.service';
 import { Need } from '../need/entities/need.entity';
@@ -11,6 +19,9 @@ import {
   OrganizationStatus,
 } from '../organization/entities/organization.entity';
 import { Post } from '../post/entities/post.entity';
+import { StoryView } from '../story/entities/story-view.entity';
+import { Story } from '../story/entities/story.entity';
+import { StoryDto, toStoryDto } from '../story/story.service';
 import { Supply } from '../supply/entities/supply.entity';
 import { VolunteerType } from '../volunteer-type/entities/volunteer-type.entity';
 import { VolunteerOpportunity } from '../volunteering/entities/volunteer-opportunity.entity';
@@ -41,10 +52,47 @@ export interface PublicOrgSummary {
   categories: string[];
 }
 
+/** Una organización en la barra de historias del inicio (QK-111). */
+export interface PublicStoryGroup {
+  organizationId: string;
+  organizationName: string;
+  organizationLogoUrl: string | null;
+  /** `seen`: si quien mira ya la abrió; el visitante sin cuenta, siempre `false`. */
+  stories: (StoryDto & { seen: boolean })[];
+}
+
 export interface PublicLocality {
   locality: string;
   province: string | null;
 }
+
+/** Una fila del ranking de donantes. Nunca lleva contacto (invariante 18). */
+export interface DonorRankingRow {
+  position: number;
+  userId: string;
+  name: string;
+  total: number;
+}
+
+export interface PublicDonorProfile {
+  userId: string;
+  name: string;
+  /** Alta de la cuenta, ISO. El front muestra mes y año. */
+  memberSince: string;
+  monthTotal: number;
+  totalAmount: number;
+}
+
+/** Top global del inicio (QK-114) y top de la ficha (QK-115), DOMAIN.md §17. */
+const GLOBAL_TOP_DONORS = 10;
+const ORGANIZATION_TOP_DONORS = 5;
+
+/**
+ * Mes en curso sobre la fecha de declaración: una donación confirmada después
+ * suma en el mes en que se declaró. Los extremos viajan como literales UTC
+ * (`utcLiteral`) porque `createdAt` es `TIMESTAMP` sin zona.
+ */
+const IN_CURRENT_MONTH = `d."createdAt" >= :monthFrom AND d."createdAt" < :monthTo`;
 
 /**
  * Una necesidad abierta: ni cerrada a mano, ni cubierta, ni vencida. Mismo
@@ -83,6 +131,12 @@ export class PublicService {
     private readonly opportunities: Repository<VolunteerOpportunity>,
     @InjectRepository(VolunteerType)
     private readonly volunteerTypes: Repository<VolunteerType>,
+    @InjectRepository(OrgEvent)
+    private readonly events: Repository<OrgEvent>,
+    @InjectRepository(MonetaryDonation)
+    private readonly donations: Repository<MonetaryDonation>,
+    @InjectRepository(Story)
+    private readonly stories: Repository<Story>,
   ) {}
 
   async listOrganizations(
@@ -224,7 +278,16 @@ export class PublicService {
       .addSelect('n."requiredQuantity"', 'requiredQuantity')
       .addSelect('n."coveredQuantity"', 'coveredQuantity')
       .addSelect('n."deadline"', 'deadline')
+      // Lo más urgente primero; entre las que vencen el mismo día, la menos
+      // cubierta (más relevante). n.id cierra el orden: sin una clave única,
+      // LIMIT/OFFSET puede repetir o saltear filas entre páginas del carrusel.
+      // NULLIF: requiredQuantity > 0 lo valida el DTO, no un CHECK en la base.
       .orderBy('n."deadline"', 'ASC')
+      .addOrderBy(
+        'CAST(n."coveredQuantity" AS float) / NULLIF(n."requiredQuantity", 0)',
+        'ASC',
+      )
+      .addOrderBy('n.id', 'ASC')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .getRawMany<{
@@ -276,13 +339,23 @@ export class PublicService {
       postMedia,
       opportunities,
       volunteerTypes,
+      events,
+      topDonors,
+      stories,
     ] = await Promise.all([
       this.needs
         .createQueryBuilder('n')
         .innerJoin(Supply, 's', 's.id = n."supplyId"')
+        .leftJoin(
+          OrgEvent,
+          'e',
+          'e.id = n."eventId" AND e."organizationId" = n."organizationId"',
+        )
         .where('n."organizationId" = :id', { id })
         .andWhere(OPEN_NEED)
         .select('n.id', 'id')
+        .addSelect('n."eventId"', 'eventId')
+        .addSelect('e."name"', 'eventName')
         .addSelect('s."name"', 'supplyName')
         .addSelect('s."category"', 'supplyCategory')
         .addSelect('s."unit"', 'supplyUnit')
@@ -298,6 +371,8 @@ export class PublicService {
           requiredQuantity: string;
           coveredQuantity: string;
           deadline: Date | string;
+          eventId: string | null;
+          eventName: string | null;
         }>(),
       this.collectionPoints.findBy({ organizationId: id, active: true }),
       this.posts.find({
@@ -329,6 +404,11 @@ export class PublicService {
               't',
               't.id = o."volunteerTypeId" AND t."organizationId" = o."organizationId"',
             )
+            .leftJoin(
+              OrgEvent,
+              'e',
+              'e.id = o."eventId" AND e."organizationId" = o."organizationId"',
+            )
             .where('o."organizationId" = :id', { id })
             .andWhere(OPEN_OPPORTUNITY)
             .select('o.id', 'id')
@@ -340,6 +420,8 @@ export class PublicService {
             .addSelect('o."acceptedCount"', 'acceptedCount')
             .addSelect('o."volunteerTypeId"', 'volunteerTypeId')
             .addSelect('t."name"', 'volunteerTypeName')
+            .addSelect('o."eventId"', 'eventId')
+            .addSelect('e."name"', 'eventName')
             .orderBy('o."startsAt"', 'ASC')
             .getRawMany<{
               id: string;
@@ -351,6 +433,8 @@ export class PublicService {
               acceptedCount: string;
               volunteerTypeId: string | null;
               volunteerTypeName: string | null;
+              eventId: string | null;
+              eventName: string | null;
             }>()
         : Promise.resolve([]),
       organization.seeksVolunteers
@@ -360,6 +444,23 @@ export class PublicService {
             order: { name: 'ASC' },
           })
         : Promise.resolve([]),
+      // Activos; un extraordinario ya pasado no se ofrece.
+      this.events
+        .createQueryBuilder('e')
+        .where('e."organizationId" = :id', { id })
+        .andWhere('e."active" = true')
+        .andWhere(`(e."kind" = :periodic OR e."startDate" >= ${TODAY_AR})`, {
+          periodic: EventKind.PERIODIC,
+        })
+        .orderBy('e."name"', 'ASC')
+        .getMany(),
+      // Mismo criterio que `donations.acceptsMonetary`: sin datos de cobro no
+      // hay sección de donar, y tampoco top (DOMAIN.md §17).
+      organization.paymentAlias
+        ? this.topDonors(id)
+        : Promise.resolve<DonorRankingRow[]>([]),
+      // Todas las vigentes, vistas o no: el perfil no se personaliza.
+      this.liveStories({ organizationId: id }),
     ]);
 
     return {
@@ -403,6 +504,16 @@ export class PublicService {
         cuit: organization.paymentCuit,
         bank: organization.paymentBank,
       },
+      topDonors,
+      stories: stories.map(toStoryDto),
+      events: events.map((event) => ({
+        id: event.id,
+        name: event.name,
+        kind: event.kind,
+        startDate: toIsoDate(event.startDate),
+        weekdays: event.weekdays,
+        startTime: event.startTime,
+      })),
       volunteering: {
         seeksVolunteers: organization.seeksVolunteers,
         types: volunteerTypes.map((type) => ({
@@ -416,6 +527,246 @@ export class PublicService {
         })),
       },
     };
+  }
+
+  /**
+   * Barra de historias del inicio (DOMAIN.md §18, regla del 2026-11-10).
+   * Siempre todas las vigentes, también con cuenta: cada una dice si el
+   * usuario ya la vio, y las organizaciones con alguna sin ver van primero
+   * (las ya vistas enteras, al final). Dentro de cada bloque, la de historia
+   * más reciente primero; dentro de cada organización, de la más vieja a la
+   * más nueva (el orden en que se reproducen).
+   */
+  async listStories(viewerId?: string): Promise<PublicStoryGroup[]> {
+    const stories = await this.liveStories({});
+    const seen = await this.seenStoryIds(stories, viewerId);
+    const byOrg = new Map<string, Story[]>();
+    for (const story of stories) {
+      byOrg.set(story.organizationId, [
+        ...(byOrg.get(story.organizationId) ?? []),
+        story,
+      ]);
+    }
+    const orgIds = [...byOrg.keys()];
+    if (orgIds.length === 0) {
+      return [];
+    }
+
+    const [organizations, images] = await Promise.all([
+      this.organizations.find({
+        where: { id: In(orgIds), status: OrganizationStatus.VALIDATED },
+        select: { id: true, name: true },
+      }),
+      this.organizationImages(orgIds),
+    ]);
+    const names = new Map(organizations.map((o) => [o.id, o.name]));
+
+    const latest = (list: Story[]) => list[list.length - 1].createdAt.getTime();
+    const allSeen = (list: Story[]) => list.every((s) => seen.has(s.id));
+    return [...byOrg.entries()]
+      .filter(([orgId]) => names.has(orgId))
+      .sort(
+        ([, a], [, b]) =>
+          Number(allSeen(a)) - Number(allSeen(b)) || latest(b) - latest(a),
+      )
+      .map(([orgId, list]) => ({
+        organizationId: orgId,
+        organizationName: names.get(orgId)!,
+        organizationLogoUrl: images.get(orgId)?.logo ?? null,
+        stories: list.map((s) => ({ ...toStoryDto(s), seen: seen.has(s.id) })),
+      }));
+  }
+
+  /**
+   * Cuáles de estas historias ya abrió el usuario. Cruza organizaciones a
+   * propósito (la barra muestra varias, §10): no hay un `organizationId` que
+   * fijar, y el acotamiento lo dan el propio `userId` y los ids, que ya pasaron
+   * por `liveStories`. Sin cuenta no se registran vistas: el set queda vacío.
+   */
+  private async seenStoryIds(
+    stories: Story[],
+    viewerId?: string,
+  ): Promise<Set<string>> {
+    if (!viewerId || stories.length === 0) {
+      return new Set();
+    }
+    const views = await this.stories.manager.find(StoryView, {
+      where: { userId: viewerId, storyId: In(stories.map((s) => s.id)) },
+      select: { storyId: true },
+    });
+    return new Set(views.map((v) => v.storyId));
+  }
+
+  /**
+   * Marca una historia como vista. El visitante sin cuenta no deja rastro
+   * (DOMAIN.md §18). Corre como owner, sin tenant: la existencia, vigencia y
+   * organización validada se verifican antes de insertar, y el
+   * `organizationId` de la vista sale de la historia, no del cliente.
+   */
+  async viewStory(storyId: string, viewerId?: string): Promise<void> {
+    if (!viewerId) {
+      return;
+    }
+    const [story] = await this.liveStories({ storyId });
+    if (!story) {
+      throw new NotFoundException('La historia no existe.');
+    }
+    // PK (storyId, userId): volver a abrirla no duplica.
+    await this.stories.manager
+      .createQueryBuilder()
+      .insert()
+      .into(StoryView)
+      .values({
+        storyId: story.id,
+        userId: viewerId,
+        organizationId: story.organizationId,
+      })
+      .orIgnore()
+      .execute();
+  }
+
+  /**
+   * Única definición de "historia visible al público": vigente, no eliminada
+   * y de una organización validada. Corre como owner y `stories` no tiene
+   * `FORCE ROW LEVEL SECURITY`, así que cada condición va explícita.
+   */
+  private liveStories(filter: {
+    organizationId?: string;
+    storyId?: string;
+  }): Promise<Story[]> {
+    const qb = this.stories
+      .createQueryBuilder('s')
+      .innerJoin(
+        Organization,
+        'o',
+        'o.id = s."organizationId" AND o.status = :validated',
+        { validated: OrganizationStatus.VALIDATED },
+      )
+      .where('s."deletedAt" IS NULL')
+      .andWhere('s."expiresAt" > now()');
+    if (filter.organizationId) {
+      qb.andWhere('s."organizationId" = :organizationId', {
+        organizationId: filter.organizationId,
+      });
+    }
+    if (filter.storyId) {
+      qb.andWhere('s.id = :storyId', { storyId: filter.storyId });
+    }
+    return qb.orderBy('s."createdAt"', 'ASC').getMany();
+  }
+
+  /**
+   * Ranking mensual de donantes: global (top 10, QK-114) o de una organización
+   * (top 5, QK-115). Desempate: a igual monto queda arriba quien llegó antes a
+   * ese total, o sea el de última donación sumada más vieja; después, el
+   * nombre. El `userId` final no es regla de negocio: solo garantiza el mismo
+   * orden en cada request si coinciden nombre y hora.
+   */
+  async topDonors(organizationId?: string): Promise<DonorRankingRow[]> {
+    const qb = this.countedDonations()
+      .andWhere(IN_CURRENT_MONTH, currentMonth())
+      .select('u.id', 'userId')
+      .addSelect('u.name', 'name')
+      .addSelect('SUM(d.amount)', 'total')
+      .groupBy('u.id')
+      .orderBy('SUM(d.amount)', 'DESC')
+      .addOrderBy('MAX(d."createdAt")', 'ASC')
+      .addOrderBy('u.name', 'ASC')
+      .addOrderBy('u.id', 'ASC')
+      .limit(organizationId ? ORGANIZATION_TOP_DONORS : GLOBAL_TOP_DONORS);
+    if (organizationId) {
+      qb.andWhere('d."organizationId" = :organizationId', { organizationId });
+    }
+
+    const rows = await qb.getRawMany<{
+      userId: string;
+      name: string;
+      total: string;
+    }>();
+    return rows.map((row, index) => ({
+      position: index + 1,
+      userId: row.userId,
+      name: row.name,
+      total: Number(row.total),
+    }));
+  }
+
+  /**
+   * Perfil público de un donante (QK-110): mismas reglas de suma que el
+   * ranking. Sin ninguna donación que cuente no hay perfil, aunque la cuenta
+   * exista: desde afuera no se distingue de un usuario inexistente.
+   */
+  async getDonor(userId: string): Promise<PublicDonorProfile> {
+    const row = await this.countedDonations()
+      .andWhere('d."donorUserId" = :userId', { userId })
+      .select('u.id', 'userId')
+      .addSelect('u.name', 'name')
+      .addSelect('u."createdAt"', 'memberSince')
+      .addSelect(
+        `COALESCE(SUM(d.amount) FILTER (WHERE ${IN_CURRENT_MONTH}), 0)`,
+        'monthTotal',
+      )
+      .addSelect('SUM(d.amount)', 'totalAmount')
+      .setParameters(currentMonth())
+      .groupBy('u.id')
+      .getRawOne<{
+        userId: string;
+        name: string;
+        memberSince: Date;
+        monthTotal: string;
+        totalAmount: string;
+      }>();
+    if (!row) {
+      throw new NotFoundException('El donante no existe.');
+    }
+    return {
+      userId: row.userId,
+      name: row.name,
+      memberSince: new Date(row.memberSince).toISOString(),
+      monthTotal: Number(row.monthTotal),
+      totalAmount: Number(row.totalAmount),
+    };
+  }
+
+  /**
+   * Las donaciones que suman en el ranking y en el perfil, DOMAIN.md §17:
+   * económicas, confirmadas, de una cuenta, no anónimas y a una organización
+   * validada. Es la única definición: las dos lecturas parten de acá.
+   *
+   * Corre como owner y `donations` no tiene `FORCE ROW LEVEL SECURITY`, así que
+   * la policy no recorta nada (ver AddDonorUser): cada condición está escrita
+   * explícita, incluida la variante, aunque el repositorio de la entidad hija ya
+   * filtre por discriminador. Solo se joinea `users` por el nombre y el alta;
+   * email y teléfono nunca se seleccionan.
+   */
+  private countedDonations() {
+    return (
+      this.donations
+        .createQueryBuilder('d')
+        .innerJoin(
+          Organization,
+          'o',
+          'o.id = d."organizationId" AND o.status = :validated',
+          { validated: OrganizationStatus.VALIDATED },
+        )
+        // Solo cuentas donante: las donaciones previas a la separación de tipos
+        // pueden traer el id de una cuenta que la migración pasó a organización,
+        // y esa cuenta nunca figura en el ranking ni tiene perfil (DOMAIN §17).
+        .innerJoin(
+          User,
+          'u',
+          'u.id = d."donorUserId" AND u."accountType" = :donor',
+          {
+            donor: AccountType.DONOR,
+          },
+        )
+        .where('d."kind" = :kind', { kind: DonationKind.ECONOMICA })
+        .andWhere('d."status" = :confirmed', {
+          confirmed: MonetaryDonationStatus.CONFIRMADA,
+        })
+        .andWhere('d."donorUserId" IS NOT NULL')
+        .andWhere('d."isAnonymous" = false')
+    );
   }
 
   /** Logo y portada de cada organización, leídos de `media`. */
@@ -452,4 +803,9 @@ function paging(query: ListPublicQueryDto): { page: number; pageSize: number } {
     page: query.page ?? 1,
     pageSize: Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
   };
+}
+
+function currentMonth(): { monthFrom: string; monthTo: string } {
+  const { from, to } = currentMonthRange(new Date());
+  return { monthFrom: utcLiteral(from), monthTo: utcLiteral(to) };
 }

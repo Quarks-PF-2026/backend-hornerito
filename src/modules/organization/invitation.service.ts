@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthService, LoginResult } from '../auth/auth.service';
 import type { IUserRepository } from '../auth/repositories/user-repository.interface';
 import { USER_REPOSITORY } from '../auth/repositories/user-repository.interface';
+import { AccountType } from '../auth/entities/user.entity';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
 import { OrganizationInvitation } from './entities/organization-invitation.entity';
 import type { IOrganizationInvitationRepository } from './repositories/organization-invitation-repository.interface';
@@ -75,6 +76,10 @@ export class InvitationService {
         passwordHash: await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS),
         emailVerified: true,
         termsAcceptedAt: new Date(),
+        // Quien nace de una invitación no eligió tipo: llegó para gestionar la
+        // organización. Un usuario existente (p. ej. un donante) conserva el
+        // suyo; la membresía no lo cambia.
+        accountType: AccountType.ORGANIZATION,
       });
     }
 

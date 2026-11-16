@@ -17,5 +17,6 @@ import { EventService } from './event.service';
   imports: [AuthModule, TypeOrmModule.forFeature([OrgEvent, EventAttendance])],
   controllers: [EventController],
   providers: [EventService],
+  exports: [EventService],
 })
 export class EventModule {}

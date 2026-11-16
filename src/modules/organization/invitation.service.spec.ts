@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from '../auth/auth.service';
-import { User } from '../auth/entities/user.entity';
+import { AccountType, User } from '../auth/entities/user.entity';
 import { IUserRepository } from '../auth/repositories/user-repository.interface';
 import { OrganizationInvitation } from './entities/organization-invitation.entity';
 import {
@@ -152,6 +152,17 @@ describe('InvitationService', () => {
       );
       expect(result.accessToken).toBe('signed-jwt');
       expect(result.organizationId).toBe('org-1');
+    });
+
+    it('Dado un invitado sin cuenta, cuando acepta, entonces su cuenta nace de organización', async () => {
+      await service.accept('token-1', {
+        name: 'Juan Pérez',
+        password: 'password1',
+      });
+
+      expect(userRepo.create.mock.calls[0][0].accountType).toBe(
+        AccountType.ORGANIZATION,
+      );
     });
 
     it('only links the membership when the account already exists', async () => {

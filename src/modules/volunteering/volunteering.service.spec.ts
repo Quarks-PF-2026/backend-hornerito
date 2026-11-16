@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks are safe to reference unbound */
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { EventService } from '../event/event.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import {
@@ -37,6 +38,7 @@ function makeOpportunity(
     startsAt: new Date('2026-09-12T17:00:00.000Z'),
     location: 'Bv. Sarmiento 1450, Villa María',
     volunteerTypeId: null,
+    eventId: null,
     capacity: 4,
     acceptedCount: 0,
     status: OpportunityStatus.OPEN,
@@ -65,6 +67,7 @@ describe('VolunteeringService', () => {
   let service: VolunteeringService;
   let opportunities: jest.Mocked<Repository<VolunteerOpportunity>>;
   let applications: jest.Mocked<Repository<VolunteerApplication>>;
+  let events: jest.Mocked<EventService>;
 
   beforeEach(() => {
     opportunities = {
@@ -101,7 +104,13 @@ describe('VolunteeringService', () => {
       getManager: jest.fn().mockReturnValue(manager),
     } as unknown as jest.Mocked<TenantContextService>;
 
-    service = new VolunteeringService(tenantContext);
+    events = {
+      resolveLinkableId: jest.fn((id: string | null | undefined) =>
+        Promise.resolve(id ?? null),
+      ),
+    } as unknown as jest.Mocked<EventService>;
+
+    service = new VolunteeringService(tenantContext, events);
   });
 
   describe('create', () => {
@@ -113,9 +122,27 @@ describe('VolunteeringService', () => {
       expect(created.organizationId).toBe('org-1');
       expect(opportunities.save).toHaveBeenCalled();
     });
+
+    it('asocia el evento validado por EventService', async () => {
+      const created = await service.create(makeDto({ eventId: 'event-1' }));
+
+      expect(events.resolveLinkableId).toHaveBeenCalledWith('event-1');
+      expect(created.eventId).toBe('event-1');
+    });
   });
 
   describe('update', () => {
+    it('conserva el evento actual al validar y permite desasociar', async () => {
+      opportunities.findOneBy.mockResolvedValue(
+        makeOpportunity({ eventId: 'event-1' }),
+      );
+
+      const updated = await service.update('opp-1', makeDto({ eventId: null }));
+
+      expect(events.resolveLinkableId).toHaveBeenCalledWith(null, 'event-1');
+      expect(updated.eventId).toBeNull();
+    });
+
     it('actualiza los datos de una oportunidad abierta', async () => {
       opportunities.findOneBy.mockResolvedValue(makeOpportunity());
 

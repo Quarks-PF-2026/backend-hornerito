@@ -42,8 +42,15 @@ Plataforma web donde organizaciones sociales (comedores, merenderos, ONGs) publi
 | **Necesidad publicada** | Instancia concreta de una plantilla, con cantidad requerida y cobertura. Es lo que el donante ve. |
 | **Donación** | Registro de un aporte. Agrupa uno o más ítems. |
 | **Ítem de donación** | Línea de la donación: qué insumo, cuánto, y opcionalmente contra qué necesidad se imputa. |
+| **Donación económica** | Aporte en dinero que el donante **declara** desde la ficha pública y que la organización confirma o rechaza. Se distingue de la donación presencial (en especie, la registra la organización al recibirla). Detalle en §7. |
+| **Datos de cobro** | Datos que la organización carga para recibir donaciones económicas. Sin ellos no hay sección económica en su ficha (§10). |
+| **Organización publicada** | **[CONFIRMADO]** (2026-11-08) Organización en estado `validated` (§4). |
+| **Ranking de donantes** | Top mensual de donantes con cuenta por monto de donaciones económicas. Detalle en §17. |
+| **Perfil público del donante** | Página pública de un donante con cuenta. Detalle en §17. |
 | **Punto de recolección** | Lugar físico donde la organización recibe donaciones, con horarios y ubicación. |
 | **Publicación** (*post*) | Novedad que la organización difunde. |
+| **Historia** (*story*) | **[CONFIRMADO 2026-11-08, QK-111]** Imagen o video corto de una organización, con texto opcional encima y enlace opcional, **vigente 7 días** desde su publicación. No confundir con la user story de Jira (§14). Detalle en §18. |
+| **Tipo de cuenta** | **[CONFIRMADO]** (2026-11-10) `donor` u `organization`, elegido al registrarse. Atributo de la persona, no de una membresía. Detalle en §3. |
 | **Membresía** | Vínculo entre una persona y una organización, con un rol. |
 | **Invitación** | Token con vencimiento por el cual una organización suma a alguien. |
 | **Evento** | Ocasión de servicio de una organización: periódico (en días de la semana elegidos) o extraordinario (fecha puntual), con hora de comienzo. Detalle en §16. |
@@ -57,15 +64,34 @@ Plataforma web donde organizaciones sociales (comedores, merenderos, ONGs) publi
 | Actor | Puede |
 |---|---|
 | Administrador de plataforma | Validar y rechazar organizaciones. Es un atributo de la persona, no una membresía. No hay alta self-service. |
-| Visitante anónimo | Consultar el directorio público. Sin cuenta. |
+| Visitante anónimo | Consultar el directorio público, el ranking de donantes y los perfiles públicos de donantes (§17). Sin cuenta. |
 
 ### Donante
 
 **[CONFIRMADO]** El donante **puede tener cuenta o no tenerla**. Las dos formas conviven: se puede donar de forma anónima o identificada sin registrarse, y también existirá el donante registrado.
 
-Consecuencia de diseño: el modelo de donación **no debe asumir que el donante es texto libre** ni que siempre es un usuario. Hoy el código solo soporta la variante sin cuenta.
+Consecuencia de diseño: el modelo de donación **no debe asumir que el donante es texto libre** ni que siempre es un usuario. Hasta el Sprint 6 el código solo soportaba la variante sin cuenta; QK-113 lo resuelve (§13.6).
 
-**[A DEFINIR]** Qué gana el donante con cuenta (¿historial de lo que donó? ¿seguir organizaciones? ¿comprometerse a donar?) y si entra en esta iteración o es roadmap.
+**[CONFIRMADO]** (2026-11-08) El donante con cuenta **entra en esta iteración** (Sprint 6). Le da:
+- Que su donación económica declarada con sesión iniciada **quede asociada a su cuenta** (QK-113, §7).
+- Figurar en el **ranking mensual de donantes**, global y por organización (QK-114, QK-115, §17).
+- Un **perfil público de donante** (QK-110, §17).
+
+Donar con cuenta **no requiere ser miembro** de la organización: es un vínculo distinto de la membresía.
+
+#### Tipo de cuenta
+
+**[CONFIRMADO]** (2026-11-10) Reglas del tipo de cuenta:
+
+- Se elige **al registrarse**: `donor` (por defecto; los donantes son la mayoría) u `organization`.
+- **Las cuentas no se mezclan**: el tipo es un atributo de la persona, como el administrador de plataforma, no una membresía.
+- Una cuenta `donor` **no crea organizaciones**. Para gestionar un comedor se registra una cuenta `organization` (con otro correo, si ya se tiene una `donor`) (§4).
+- Un `donor` invitado por una organización **puede aceptar** y queda miembro con el rol de la invitación; su cuenta **sigue siendo `donor`** (§5).
+- Un usuario que se crea al aceptar una invitación **nace `organization`** (§5).
+- Solo una cuenta `donor` asocia donaciones económicas: la de una cuenta `organization` se registra como si no hubiera sesión y **nunca** figura en el ranking ni como perfil público (§7, §17).
+- **Migración**: los usuarios existentes con alguna membresía o dueños de una organización quedaron `organization`; el resto, `donor`.
+
+**[A DEFINIR]** Historial propio de lo donado, seguir organizaciones y comprometerse a donar. Fuera de esta iteración.
 
 ### Plano de organización
 
@@ -95,6 +121,7 @@ pending ──validar──> validated
 - **[CONFIRMADO]** La validación es **discrecional**: el administrador revisa que la organización exista y que sus datos sean creíbles, y decide. No hay checklist formal ni documentación obligatoria.
 - **[CONFIRMADO]** Una organización **rechazada puede volver a postularse**: corrige y vuelve a `pending`. El rechazo no es terminal. Vuelve a `pending` **únicamente cuando el `owner` corrige sus datos** (2026-09-13, QK-19).
 - **[CONFIRMADO]** Una organización **nace `pending`** (2026-09-13, QK-19).
+- **[CONFIRMADO]** (2026-11-10) Solo una cuenta `organization` crea una organización; una `donor` no (§3, tipo de cuenta).
 - **Una organización que no está `validated` no opera**: nada del plano de organización le funciona.
 
 ### Validación (QK-19)
@@ -110,8 +137,9 @@ Confirmado con el usuario el 2026-09-13.
 ## 5. Cuentas y acceso
 
 - El alta exige aceptar los términos y **verificar el correo**. Sin verificar no hay login. El token vence.
+- **[CONFIRMADO]** (2026-11-10) En el alta se elige el **tipo de cuenta**, `donor` por defecto (§3).
 - Recuperación de contraseña por correo, con token y vencimiento.
-- Se suma gente por **invitación**: token con vencimiento y el rol ya definido.
+- Se suma gente por **invitación**: token con vencimiento y el rol ya definido. **[CONFIRMADO]** (2026-11-10) Un `donor` puede aceptarla y conserva su tipo de cuenta; quien se registra al aceptarla nace `organization` (§3).
 - Los permisos se **revalidan en cada request**. Si a alguien le bajan el rol, aplica de inmediato y no cuando expire su sesión.
 - Una persona puede pertenecer a más de una organización y cambiar de contexto entre ellas.
 
@@ -152,7 +180,7 @@ El código hoy tiene la necesidad como entidad única, sin plantilla. Discrepanc
 
 **[CONFIRMADO]** La donación **tiene estado**, y el modelo debe soportar **agregar estados nuevos en el futuro** sin rehacerlo. Se implementa con el **patrón State**.
 
-**Decisión de diseño tomada, implementación diferida:** hoy la donación nace recibida y no hay máquina de estados. Lo que se documenta ahora es que el modelo **no debe asumir estado único**, para que sumar "comprometida", "en tránsito" o "rechazada" después sea agregar un estado y no rediseñar la entidad. Merece ADR (§11.1).
+**Implementado para la económica, diferido para la presencial:** la donación **económica** tiene estados desde QK-20 (abajo), con patrón State. La **presencial** nace recibida y no tiene estados. El modelo **no debe asumir estado único**, para que sumar "comprometida" o "en tránsito" después sea agregar un estado y no rediseñar la entidad. Merece ADR (§12.1).
 
 ### Quién registra una donación
 
@@ -161,6 +189,24 @@ El código hoy tiene la necesidad como entidad única, sin plantilla. Discrepanc
 `owner` y `admin` **también pueden**, por permiso heredado, pero **sin caso de uso dedicado**: no hay flujo pensado para ellos, es una capacidad forzada. Distinción que importa al diseñar la UI y al escribir escenarios — el camino feliz es el del responsable.
 
 > **[A DEFINIR]** A qué rol de la tabla de §3 corresponde exactamente "responsable". Por la descripción de permisos parecería ser `coordinador`, pero no está confirmado y no conviene asumirlo.
+
+### Donación económica (QK-20, QK-113)
+
+Confirmado con el usuario el 2026-11-08.
+
+- **[CONFIRMADO]** (QK-20) La donación económica la **declara el donante**. Estados:
+
+  ```
+  declarada ──confirmar──> confirmada
+      └──────rechazar──> rechazada
+  ```
+
+  La confirma o rechaza un `owner` o `admin` de la organización, **contra el extracto**. La donación presencial sigue sin estados.
+- **[CONFIRMADO]** (QK-113) Declarada **con sesión iniciada**, queda **asociada a la cuenta** del donante. No requiere ser miembro de la organización. **No es retroactiva**: las donaciones declaradas antes, o sin sesión, no se asocian.
+- **[CONFIRMADO]** (2026-11-10) Esto vale solo para cuentas `donor`. Declarada desde una cuenta `organization` con sesión, se registra **como si no hubiera sesión**: no se asocia a la cuenta (§3).
+- **[CONFIRMADO]** (QK-113) Con sesión, nombre y contacto vienen **precargados de la cuenta**; se pueden editar **solo para esa donación**, sin tocar el perfil.
+- **[CONFIRMADO]** (QK-113) Sin sesión se dona como antes.
+- **[CONFIRMADO]** (QK-113) **Anónima con sesión**: queda asociada a la cuenta igual, y la **organización sigue viendo nombre y contacto** en su panel. "Anónima" significa **anónima frente al público**, no sin datos: ninguna superficie pública muestra su nombre (ranking y perfil la excluyen, §17).
 
 ### Resto
 
@@ -183,15 +229,20 @@ Lugar físico con dirección, coordenadas y horarios por día de la semana. Sirv
 - **Publicaciones**: imagen de la novedad. Es lo esperable para difusión (§0).
 - **Insumos**: imagen del insumo, para que el directorio público se entienda mejor.
 
-Las dos últimas **no están implementadas**: hoy la media polimórfica solo se usa para organización. Roadmap §11.4.
+Publicaciones e insumos **no están implementados**: hoy la media polimórfica solo se usa para organización. Roadmap §12.4.
 
-**[A DEFINIR]** Quién puede subirlas y si hay moderación. Por defecto se asume que quien gestiona contenido también gestiona sus imágenes.
+- **[CONFIRMADO 2026-11-08, QK-111]** **Historias**: imagen o video corto, con sus propios límites de formato y tamaño (§18).
+
+**[A DEFINIR]** Quién puede subirlas y si hay moderación. Por defecto se asume que quien gestiona contenido también gestiona sus imágenes. Para historias, quién publica ya está definido (§18).
 
 ## 10. Directorio público
 
 - Cualquiera, sin cuenta, busca organizaciones por texto y categoría, y ve la ficha de una con sus necesidades abiertas.
 - Solo aparecen organizaciones `validated`.
-- Es la única superficie que no pasa por el aislamiento por organización: su función es mostrar varias.
+- **[CONFIRMADO]** (2026-11-08) La sección de **donación económica** de la ficha solo existe si la organización cargó sus **datos de cobro**.
+- El inicio muestra el ranking mensual global de donantes y la ficha el top de la organización (§17).
+- **[CONFIRMADO 2026-11-08, QK-111]** El inicio muestra las **historias vigentes** de organizaciones `validated`, y el perfil público de la organización las suyas (§18).
+- Directorio, ranking e historias del inicio son las únicas superficies que no pasan por el aislamiento por organización: su función es mostrar varias.
 - Por §0, es **mitad del producto**, no un extra.
 
 ## 11. Invariantes duras
@@ -208,13 +259,15 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 8. Una organización rechazada **puede volver a postularse**. **[CONFIRMADO]**
 9. La cobertura de una necesidad **puede superar** lo requerido; el exceso se registra. **[CONFIRMADO]**
 10. Todo ajuste manual de cobertura **deja traza de quién y por qué**. **[CONFIRMADO]**
-11. El donante puede ser anónimo, identificado sin cuenta, o registrado. **[CONFIRMADO]**
+11. El donante puede ser anónimo, identificado sin cuenta, o registrado. **[CONFIRMADO]** "Anónimo" es frente al público: la organización puede ver nombre y contacto (§7, QK-113, 2026-11-08).
 12. El directorio público muestra **solo** organizaciones `validated`.
 13. Un ítem de donación puede existir sin necesidad asociada.
 14. La difusión pública y la gestión interna **pesan igual**. **[CONFIRMADO]**
 15. Un evento **nunca se borra**; darlo de baja solo detiene sus ocurrencias futuras. **[CONFIRMADO]**
 16. Una ocurrencia tiene **a lo sumo una** asistencia; cargarla de nuevo la reemplaza. **[CONFIRMADO]**
 17. La asistencia **nunca se expone** en el directorio público ni en la ficha de organización. **[CONFIRMADO]**
+18. Ninguna superficie pública muestra el **contacto de un donante**. **[CONFIRMADO]** (2026-11-08, QK-110/113/114/115)
+19. Una historia **nunca se borra físicamente**: vencer o eliminarla solo la oculta (§18). **[CONFIRMADO 2026-11-08, QK-111]**
 
 > Cayó la invariante "una donación no tiene estados": era una lectura del código, la reemplaza §7.
 > Las marcadas **[PROVISORIO]** dependen de la tabla de roles, que el equipo no dio por final.
@@ -223,12 +276,12 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 
 | # | Qué | Estado |
 |---|---|---|
-| 1 | Donación con máquina de estados vía patrón State | **[CONFIRMADO]** como decisión de diseño. No se implementa todavía. Necesita ADR |
+| 1 | Donación con máquina de estados vía patrón State | **[CONFIRMADO]** como decisión de diseño. **Implementado para la económica** desde QK-20 (`declarada`/`confirmada`/`rechazada`, `src/modules/donation/monetary/states/`); la presencial sigue sin estados (§7). Antes figuraba "no se implementa todavía". Necesita ADR |
 | 2 | Catálogo de insumos base global + propios por organización | **[CONFIRMADO]**. Requiere migración |
 | 3 | Necesidad como plantilla + publicación | **[CONFIRMADO]** en dirección, **[A DEFINIR]** el alcance |
 | 4 | Imágenes en publicaciones e insumos | **[CONFIRMADO]**. Hoy solo organización |
 | 5 | Traza de quién y por qué en el ajuste manual de cobertura | **[CONFIRMADO]**. Hoy el ajuste no deja rastro |
-| 6 | Donante con cuenta | **[CONFIRMADO]** que existirá. **[A DEFINIR]** qué le da y si entra en esta iteración |
+| 6 | Donante con cuenta | **[CONFIRMADO]** (2026-11-08) entra en Sprint 6: asociación de la donación económica (QK-113), ranking (QK-114, QK-115) y perfil público (QK-110), §3. **[A DEFINIR]** historial propio, seguir organizaciones, comprometerse a donar |
 
 **[A RELEVAR]** El equipo completo todavía no revisó si hay más reglas acordadas que el código no implementa. Es pendiente de la próxima reunión.
 
@@ -237,11 +290,11 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 | # | Qué hace el código | Qué pide el negocio |
 |---|---|---|
 | 1 | Catálogo de insumos enteramente por organización | Base global + propios (§6). **El negocio gana**: hay que migrar |
-| 2 | Donación con estado único implícito | Modelo preparado para múltiples estados (§7). Diferido, pero no consolidar el diseño actual |
+| 2 | ~~Donación con estado único implícito~~ | Modelo preparado para múltiples estados (§7). **Resuelta → R2** |
 | 3 | Necesidad como entidad única, sin plantilla | Plantilla + publicación (§6) |
 | 4 | La cobertura se ajusta a mano sin dejar rastro | El ajuste se permite, pero **con traza de quién y por qué** (§6) |
 | 5 | Media polimórfica usada solo para organización | También publicaciones e insumos (§9) |
-| 6 | Donante siempre sin cuenta | Con o sin cuenta (§3) |
+| 6 | Hasta QK-113, donante siempre sin cuenta | Con o sin cuenta (§3). **En resolución**: QK-113 implementada en rama `donacion`, pendiente de validación del PO; pasa a Resueltas cuando se valide |
 | 7 | Sin SMTP los correos van al log en vez de fallar | Degradación deliberada para desarrollo, pero un alta parece exitosa y el usuario nunca recibe el enlace |
 
 **Resueltas:**
@@ -249,6 +302,7 @@ Verdades que el agente afirma sin preguntar. Duplicadas en el prompt de `horneri
 | # | Qué hacía el código | Qué pide el negocio | Resolución |
 |---|---|---|---|
 | R1 | Hasta QK-19, `createMine` creaba la organización ya `validated` (QK-13) | Nace `pending` y la valida el administrador de plataforma (§4) | QK-19 lo corrige: la organización nace `pending` |
+| R2 | Hasta QK-20, donación con estado único implícito (ex fila 2) | Modelo preparado para múltiples estados (§7) | QK-20: la económica tiene `declarada`/`confirmada`/`rechazada` con patrón State (`src/modules/donation/monetary/states/`). La presencial sigue sin estados, por decisión (§7) |
 
 ## 14. Trazabilidad y proceso
 
@@ -259,6 +313,8 @@ QK-NN en Jira                   el requisito
 test/acceptance/QK-NN.feature   la verificación
 feat(alcance): ... (QK-NN)      el cambio
 ```
+
+> **Excepción registrada** (decisión del usuario, 2026-11-10): el **tipo de cuenta** (§3) se implementó **sin user story propia en Jira ni escenario de aceptación**. Lo cubren tests unitarios y de integración (`test/account-type.e2e-spec.ts`).
 
 **[CONFIRMADO]** Las ramas son **por funcionalidad, con nombre conceptual**, no por historia: `necesidad`, `organizacion`, `publicacion`, `donacion`. Varias historias de la misma funcionalidad comparten rama.
 
@@ -278,7 +334,7 @@ feat(alcance): ... (QK-NN)      el cambio
 
 1. **Necesidad como plantilla** — ¿la plantilla es de la organización o global? ¿Qué atributos van en cada lado? ¿Varias publicaciones abiertas de la misma plantilla? (§6)
 2. **"Responsable"** — a qué rol de §3 corresponde exactamente el responsable que registra donaciones (§7)
-3. **Donante con cuenta** — qué le da tener cuenta, y si entra en esta iteración (§3)
+3. **Donante con cuenta** — resuelto en parte el 2026-11-08: entra en Sprint 6 con asociación de la donación económica, ranking y perfil público (§3). Sigue abierto: historial propio, seguir organizaciones, comprometerse a donar
 4. **Auditor o ente externo** — ¿existirá? (§3)
 5. **Roles y permisos** — la tabla de §3 es provisoria; ¿cuál es la definitiva?
 6. **Imágenes** — quién puede subirlas, si hay moderación (§9)
@@ -313,3 +369,67 @@ Confirmado con el usuario el 2026-09-27.
 - **[CONFIRMADO]** No se puede cargar asistencia en una **fecha futura**, ni en una fecha que no sea ocurrencia del evento.
 - **[NO CONFIRMADO]** Plazo límite de corrección de un conteo — por ahora ninguno.
 - **[CONFIRMADO]** La asistencia es **interna**: nunca se expone en el directorio público ni en la ficha de organización (invariante 17, §11). Es **independiente** del estado de las necesidades (§6). A futuro alimenta la predicción con IA de QK-118.
+
+## 17. Ranking de donantes y perfil público (QK-110, QK-114, QK-115)
+
+Confirmado con el usuario el 2026-11-08.
+
+### Qué donación cuenta
+
+Reglas de suma comunes al ranking y al perfil público:
+
+- **[CONFIRMADO]** Solo **donaciones económicas confirmadas** (§7), **asociadas a una cuenta**, **no anónimas**, a **organizaciones publicadas** (`validated`). Las rechazadas nunca cuentan.
+- **[CONFIRMADO]** (2026-11-10) Una cuenta `organization` **nunca** figura en el ranking ni tiene perfil público de donante: sus donaciones no se asocian (§7).
+- **[CONFIRMADO]** Mes **calendario en hora Argentina**. La donación cuenta en el mes de su **declaración** (fecha de registro), aunque se confirme después.
+- **[CONFIRMADO]** Solo económicas: el ranking de insumos queda fuera hasta que se pueda identificar al donante presencial.
+
+### Ranking mensual (QK-114, QK-115)
+
+- **[CONFIRMADO]** Dos rankings: **global, top 10, en el inicio** (QK-114) y **por organización, top 5, en su ficha** (QK-115).
+- **[CONFIRMADO]** Orden: **monto descendente**. Empate: primero quien **llegó antes a ese monto** (por fecha de declaración); después, alfabético.
+- **[CONFIRMADO]** Se muestra **posición, nombre de la cuenta y monto**. Nunca el contacto (invariante 18, §11).
+- **[CONFIRMADO]** Público, **sin sesión**. Sin datos en el mes, la sección **no se muestra**.
+- **[CONFIRMADO]** El top de la ficha solo se muestra si la organización tiene **datos de cobro** (§10).
+- **[CONFIRMADO]** (QK-115) Aparecer en el top de una organización **revela públicamente que esa persona le donó**: aceptado por diseño. Quien no quiera figurar marca la donación como anónima (§7).
+
+### Perfil público del donante (QK-110)
+
+- **[CONFIRMADO]** Muestra **nombre**, **"donante desde"** (mes/año de alta de la cuenta), **total del mes en curso** y **total histórico**, con las reglas de suma de arriba.
+- **[CONFIRMADO]** Nunca muestra email, teléfono ni el **listado de organizaciones** a las que donó.
+- **[CONFIRMADO]** Un usuario sin donaciones públicas confirmadas (ninguna que cuente según las reglas de arriba) **no tiene perfil público**: se responde como no encontrado.
+- **[CONFIRMADO]** Se ve **sin sesión**.
+
+## 18. Historias de organización (QK-111)
+
+Confirmado con el usuario (en representación del equipo/PO) el 2026-11-08. Todas las reglas de esta sección son **[CONFIRMADO 2026-11-08, QK-111]**, salvo las del inicio marcadas **[CONFIRMADO 2026-11-10]**, que reemplazan a las originales.
+
+### Qué es y quién publica
+
+- Una **historia** es una imagen o video corto de una organización, con **texto opcional** encima y **enlace opcional**. Está **vigente 7 días** desde su publicación.
+- Publican `owner`, `admin` y `coordinador`; el `voluntario` no. Atada a la tabla de roles **[PROVISORIO]** (§3, §15.5).
+- Solo organizaciones `validated` publican, y solo sus historias aparecen.
+- **Máximo 20 historias vigentes** por organización.
+
+### Contenido
+
+- **Imagen**: ≤ 8 MB, JPEG, PNG o WebP.
+- **Video**: ≤ 30 s y ≤ 20 MB, MP4 o WebM.
+- Proporción vertical **9:16 recomendada, no exigida**: no se rechaza otra; el visor la encuadra.
+- **Enlace**: solo URL `http`/`https`, de cualquier dominio.
+
+### Vencimiento y eliminación
+
+- **Vencida**: deja de mostrarse en el inicio y en el perfil público, pero el registro se conserva (invariante 19, §11).
+- **Eliminar antes de vencer** es borrado lógico: se oculta igual que una vencida, se conserva el registro y **libera cupo** de las 20.
+- Cualquier `owner`/`admin`/`coordinador` de la organización puede eliminar **cualquier** historia de su organización, no solo las propias.
+
+### Dónde se ven
+
+- **Inicio** (superficie pública entre organizaciones, §10): **siempre todas** las historias vigentes de organizaciones `validated`, también con cuenta (estilo Instagram). **[CONFIRMADO 2026-11-10]** — reemplaza la regla de QK-111 del 2026-11-08, que ocultaba con cuenta las historias ya vistas y sacaba de la barra a la organización sin historias sin ver.
+  - **Con cuenta**: cada historia indica si el usuario **ya la vio**. Las organizaciones con alguna historia sin ver van **primero**; las que tiene todas vistas, **al final**. Dentro de cada bloque, primero la de historia más reciente. **[CONFIRMADO 2026-11-10]**
+  - Abrir la historia en el inicio **o** en el perfil de la organización la marca como vista.
+  - Los miembros ven las historias de su propia organización como cualquier usuario.
+- **Perfil público de la organización**: todas sus historias vigentes, vistas o no.
+- **Visitante sin cuenta**: ve todas las vigentes, todas como no vistas; no se registran vistas.
+- **Panel de la organización**: las vigentes con su vencimiento y, debajo, las vencidas como **historial de solo lectura**. Las eliminadas no se muestran.
+- **Aislamiento**: en el panel, una organización solo ve y elimina **sus propias** historias (invariante 1, §11).

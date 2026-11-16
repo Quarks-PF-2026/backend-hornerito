@@ -1,5 +1,7 @@
+import { ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { AccountType } from '../auth/entities/user.entity';
 import { MailService } from '../mail/mail.service';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import {
@@ -156,5 +158,51 @@ describe('OrganizationService — ubicación (QK-112)', () => {
 
     expect(guardada.locality).toBeNull();
     expect(guardada.address).toBe(PERFIL.address);
+  });
+});
+
+describe('OrganizationService — tipo de cuenta al crear la organización', () => {
+  let userRepository: { findById: jest.Mock; findByIds: jest.Mock };
+  let transaction: jest.Mock;
+  let service: OrganizationService;
+
+  beforeEach(() => {
+    userRepository = { findById: jest.fn(), findByIds: jest.fn() };
+    // La transacción de alta no interesa acá: alcanza con saber si se llegó.
+    transaction = jest.fn().mockResolvedValue(makeOrganization());
+    service = new OrganizationService(
+      { findById: jest.fn() } as never,
+      // Sin membresías: es el camino de alta, no el de edición.
+      { findByUserId: jest.fn().mockResolvedValue([]) } as never,
+      userRepository as never,
+      {} as MailService,
+      { get: jest.fn() } as unknown as ConfigService,
+      { transaction } as unknown as DataSource,
+    );
+  });
+
+  it('Dado una cuenta de donante, cuando intenta crear una organización, entonces se le niega con 403', async () => {
+    userRepository.findById.mockResolvedValue({
+      id: USER_ID,
+      accountType: AccountType.DONOR,
+    });
+
+    await expect(service.upsertMine(USER_ID, PERFIL)).rejects.toThrow(
+      new ForbiddenException(
+        'Las cuentas de donante no pueden crear una organización.',
+      ),
+    );
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('Dado una cuenta de organización, cuando crea su organización, entonces se da de alta', async () => {
+    userRepository.findById.mockResolvedValue({
+      id: USER_ID,
+      accountType: AccountType.ORGANIZATION,
+    });
+
+    await service.upsertMine(USER_ID, PERFIL);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });
